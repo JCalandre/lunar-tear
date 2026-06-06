@@ -723,6 +723,7 @@ type BigHuntCostumeBattleInfo struct {
 	HitCount               int32
 	RandomDisplayValueType int32
 	RandomDisplayValue     int64
+	IsAlive                bool
 }
 
 type BattleState struct {

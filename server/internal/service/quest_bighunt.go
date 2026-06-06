@@ -124,16 +124,12 @@ func (s *BigHuntServiceServer) FinishBigHuntQuest(ctx context.Context, req *pb.F
 			difficultyBonusPermil = coeff
 		}
 
-		aliveBonusPermil := int32(500)
+		// Survival bonus scales with how many characters died over the run.
+		deathCount := bigHuntDeathCount(detail.CostumeBattleInfo)
+		aliveBonusPermil := bigHuntSurvivalBonusPermil(deathCount)
 
-		maxComboBonusPermil := int32(0)
-		if detail.MaxComboCount >= 100 {
-			maxComboBonusPermil = 300
-		} else if detail.MaxComboCount >= 50 {
-			maxComboBonusPermil = 200
-		} else if detail.MaxComboCount >= 20 {
-			maxComboBonusPermil = 100
-		}
+		// Combo bonus is keyed on the run's max combo (accumulated across waves).
+		maxComboBonusPermil := bigHuntComboBonusPermil(detail.MaxComboCount)
 
 		userScore := baseScore * int64(1000+difficultyBonusPermil+aliveBonusPermil+maxComboBonusPermil) / 1000
 
@@ -357,20 +353,12 @@ func (s *BigHuntServiceServer) SaveBigHuntBattleInfo(ctx context.Context, req *p
 	userId := CurrentUserId(ctx, s.users, s.sessions)
 	nowMillis := gametime.NowMillis()
 
-	var totalDamage int64
-	if req.BigHuntBattleDetail != nil {
-		for _, ci := range req.BigHuntBattleDetail.CostumeBattleInfo {
-			if ci != nil {
-				totalDamage += ci.TotalDamage
-			}
-		}
-	}
-
 	s.users.UpdateUser(userId, func(user *store.UserState) {
 		user.BigHuntBattleBinary = req.BattleBinary
 
 		if req.BigHuntBattleDetail != nil {
-			existingCostumes := user.BigHuntBattleDetail.CostumeBattleInfo
+			existing := user.BigHuntBattleDetail
+			existingCostumes := existing.CostumeBattleInfo
 			nextWaveIndex := int32(bigHuntWaveCount(existingCostumes))
 			newCostumes := make([]store.BigHuntCostumeBattleInfo, 0, len(req.BigHuntBattleDetail.CostumeBattleInfo))
 			for _, ci := range req.BigHuntBattleDetail.CostumeBattleInfo {
@@ -390,15 +378,29 @@ func (s *BigHuntServiceServer) SaveBigHuntBattleInfo(ctx context.Context, req *p
 					HitCount:               ci.HitCount,
 					RandomDisplayValueType: rdType,
 					RandomDisplayValue:     rdValue,
+					IsAlive:                ci.IsAlive,
 				})
 			}
+
+			// Accumulate aggregates across every wave, not just the current request.
+			// CostumeBattleInfo is the single source of truth for total damage.
+			allCostumes := append(existingCostumes, newCostumes...)
+			var accumulatedDamage int64
+			for _, ci := range allCostumes {
+				accumulatedDamage += ci.TotalDamage
+			}
+			maxCombo := existing.MaxComboCount
+			if req.BigHuntBattleDetail.MaxComboCount > maxCombo {
+				maxCombo = req.BigHuntBattleDetail.MaxComboCount
+			}
+
 			user.BigHuntBattleDetail = store.BigHuntBattleDetail{
 				DeckType:             req.BigHuntBattleDetail.DeckType,
 				UserTripleDeckNumber: req.BigHuntBattleDetail.UserTripleDeckNumber,
-				BossKnockDownCount:   req.BigHuntBattleDetail.BossKnockDownCount,
-				MaxComboCount:        req.BigHuntBattleDetail.MaxComboCount,
-				TotalDamage:          totalDamage,
-				CostumeBattleInfo:    append(existingCostumes, newCostumes...),
+				BossKnockDownCount:   existing.BossKnockDownCount + req.BigHuntBattleDetail.BossKnockDownCount,
+				MaxComboCount:        maxCombo,
+				TotalDamage:          accumulatedDamage,
+				CostumeBattleInfo:    allCostumes,
 			}
 		}
 
@@ -458,6 +460,76 @@ func bigHuntWaveCount(infos []store.BigHuntCostumeBattleInfo) int {
 		return 0
 	}
 	return int(infos[len(infos)-1].WaveIndex) + 1
+}
+
+// bigHuntDeathCount counts how many distinct player characters ended the run
+// dead. A character can appear across several waves; its final state is taken
+// from the highest wave index in which it was reported. Entries that do not
+// resolve to one of the player's deck characters (CostumeId 0 -- e.g. the boss,
+// which is also reported in CostumeBattleInfo and is "not alive" once defeated)
+// are skipped so they don't inflate the death count.
+func bigHuntDeathCount(infos []store.BigHuntCostumeBattleInfo) int32 {
+	latestWave := map[int32]int32{}
+	latestAlive := map[int32]bool{}
+	for _, ci := range infos {
+		if ci.CostumeId == 0 {
+			continue
+		}
+		if w, ok := latestWave[ci.CostumeId]; !ok || ci.WaveIndex >= w {
+			latestWave[ci.CostumeId] = ci.WaveIndex
+			latestAlive[ci.CostumeId] = ci.IsAlive
+		}
+	}
+	var deaths int32
+	for _, alive := range latestAlive {
+		if !alive {
+			deaths++
+		}
+	}
+	return deaths
+}
+
+// bigHuntSurvivalBonusPermil maps the run's death count to the survival score
+// bonus: 0 deaths=+200%, 1=+150%, 2=+100%, 3=+50%, 4 or more=0%.
+func bigHuntSurvivalBonusPermil(deaths int32) int32 {
+	switch deaths {
+	case 0:
+		return 2000
+	case 1:
+		return 1500
+	case 2:
+		return 1000
+	case 3:
+		return 500
+	default:
+		return 0
+	}
+}
+
+// bigHuntComboBonusPermil maps the run's max combo to the combo score bonus.
+func bigHuntComboBonusPermil(maxCombo int32) int32 {
+	switch {
+	case maxCombo >= 46:
+		return 1800
+	case maxCombo >= 42:
+		return 1600
+	case maxCombo >= 36:
+		return 1400
+	case maxCombo >= 31:
+		return 1200
+	case maxCombo >= 26:
+		return 1000
+	case maxCombo >= 21:
+		return 800
+	case maxCombo >= 16:
+		return 600
+	case maxCombo >= 11:
+		return 400
+	case maxCombo >= 6:
+		return 200
+	default:
+		return 0
+	}
 }
 
 func resolveBigHuntCostumeId(user *store.UserState, userDeckNumber, deckCharacterNumber int32) int32 {

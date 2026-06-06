@@ -178,10 +178,12 @@ func load1to1(db *sql.DB, uid int64, u *store.UserState) {
 			&u.BigHuntBattleDetail.TotalDamage, &u.BigHuntDeckNumber, &u.BigHuntBattleBinary)
 	u.BigHuntProgress.IsDryRun = isDryRun != 0
 
-	queryRows(db, `SELECT wave_index, costume_id, total_damage, hit_count, random_display_value_type, random_display_value
+	queryRows(db, `SELECT wave_index, costume_id, total_damage, hit_count, random_display_value_type, random_display_value, is_alive
 		FROM user_big_hunt_costume_battle_infos WHERE user_id=? ORDER BY wave_index, sort_order`, uid, func(rows *sql.Rows) {
 		var ci store.BigHuntCostumeBattleInfo
-		rows.Scan(&ci.WaveIndex, &ci.CostumeId, &ci.TotalDamage, &ci.HitCount, &ci.RandomDisplayValueType, &ci.RandomDisplayValue)
+		var isAlive int
+		rows.Scan(&ci.WaveIndex, &ci.CostumeId, &ci.TotalDamage, &ci.HitCount, &ci.RandomDisplayValueType, &ci.RandomDisplayValue, &isAlive)
+		ci.IsAlive = isAlive != 0
 		u.BigHuntBattleDetail.CostumeBattleInfo = append(u.BigHuntBattleDetail.CostumeBattleInfo, ci)
 	})
 
