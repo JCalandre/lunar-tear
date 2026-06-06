@@ -209,16 +209,34 @@ func (h *QuestHandler) computeDropRewards(questDef masterdata.EntityMQuest, targ
 	if h.Campaigns != nil {
 		dropRate = h.Campaigns.QuestDropRate(target, h.campaignFilter(nowMillis))
 	}
+
+	// Event chapters advertise a memoir set (one Parts per series) in their
+	// display item group, but the per-quest drop data only wires one of them, so
+	// the rest are unobtainable. When a quest has a chapter memoir set, drop the
+	// quest's single memoir Parts and grant the chapter's full advertised set.
+	chapterMemoirs := h.ChapterMemoirsByQuestId[questDef.QuestId]
+
 	if questDef.QuestPickupRewardGroupId != 0 {
 		for _, dropId := range h.PickupRewardIdsByGroupId[questDef.QuestPickupRewardGroupId] {
 			if bdr, ok := h.BattleDropRewardById[dropId]; ok {
+				pt := model.PossessionType(bdr.PossessionType)
+				if len(chapterMemoirs) > 0 && (pt == model.PossessionTypeParts || pt == model.PossessionTypePartsEnhanced) {
+					continue // replaced by the chapter memoir set below
+				}
 				drops = append(drops, RewardGrant{
-					PossessionType: model.PossessionType(bdr.PossessionType),
+					PossessionType: pt,
 					PossessionId:   bdr.PossessionId,
 					Count:          dropRate.Apply(bdr.Count),
 				})
 			}
 		}
+	}
+	for _, partId := range chapterMemoirs {
+		drops = append(drops, RewardGrant{
+			PossessionType: model.PossessionTypeParts,
+			PossessionId:   partId,
+			Count:          1,
+		})
 	}
 	return h.appendBonusDrops(drops, target, nowMillis)
 }
