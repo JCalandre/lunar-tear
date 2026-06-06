@@ -64,8 +64,11 @@ func (s *DataServiceServer) GetUserData(ctx context.Context, req *pb.UserDataGet
 		return nil, fmt.Errorf("snapshot user: %w", err)
 	}
 
-	defaults := userdata.FullClientTableMap(user)
-	result := userdata.SelectTables(defaults, req.TableName)
+	// Project only the tables the client actually requested. Building the full
+	// ~100-table map and discarding all but a few (the old FullClientTableMap +
+	// SelectTables path) re-serialized the entire save on every fetch, so map
+	// loads got slower as the player accumulated cleared content.
+	result := userdata.ProjectTables(user, req.TableName)
 	return &pb.UserDataGetResponse{
 		UserDataJson: result,
 	}, nil

@@ -108,7 +108,12 @@ func skipDiffForMethod(method string) bool {
 		"/apb.api.config.ConfigService/GetConfig",
 		"/apb.api.data.DataService/GetLatestMasterDataVersion",
 		"/apb.api.data.DataService/GetUserDataNameV2",
-		"/apb.api.data.DataService/GetUserData":
+		"/apb.api.data.DataService/GetUserData",
+		// UpdateSequence only ensures a gimmick-sequence row exists (no rewards,
+		// no other tables) and is fired once per sequence in a burst on map load.
+		// Skipping the diff avoids two full LoadUser snapshots per call; the
+		// handler persists the row directly via EnsureGimmickSequence.
+		"/apb.api.gimmick.GimmickService/UpdateSequence":
 		return true
 	}
 	return false
