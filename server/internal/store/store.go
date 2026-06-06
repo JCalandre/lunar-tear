@@ -16,6 +16,13 @@ type UserRepository interface {
 	GetUserByUUID(uuid string) (int64, error)
 	LoadUser(userId int64) (UserState, error)
 	UpdateUser(userId int64, mutate func(*UserState)) (UserState, error)
+	// EnsureGimmickSequence inserts a not-cleared gimmick-sequence row if one
+	// does not already exist, leaving any existing (possibly cleared) row
+	// untouched. It is a targeted fast path for GimmickService.UpdateSequence,
+	// which the client fires once per sequence in a burst on map load; routing
+	// each through the full LoadUser+clone+diff UpdateUser cycle made map loads
+	// take many seconds.
+	EnsureGimmickSequence(userId int64, scheduleId, sequenceId int32) error
 	DefaultUserId() (int64, error)
 	SetFacebookId(userId int64, facebookId int64) error
 	GetUserByFacebookId(facebookId int64) (int64, error)

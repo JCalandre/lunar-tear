@@ -22,8 +22,19 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open sqlite %q: %w", path, err)
 	}
 
+	// Pin to a single connection so the per-connection pragmas below
+	// (busy_timeout, synchronous) actually apply to every query instead of
+	// only whichever pooled connection happened to run them. For a single
+	// instance this also serializes writes, removing SQLite lock contention.
+	db.SetMaxOpenConns(1)
+
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
+		// NORMAL is crash-safe under WAL and skips the fsync on every commit
+		// (only checkpoints sync). Without it the default FULL fsyncs each
+		// commit, so a burst of small writes — e.g. the flood of per-sequence
+		// UpdateSequence calls on map load — pays one fsync per RPC.
+		"PRAGMA synchronous=NORMAL",
 		"PRAGMA foreign_keys=ON",
 		"PRAGMA busy_timeout=5000",
 	}

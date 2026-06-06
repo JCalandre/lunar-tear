@@ -29,15 +29,14 @@ func (s *GimmickServiceServer) UpdateSequence(ctx context.Context, req *pb.Updat
 	log.Printf("[GimmickService] UpdateSequence: scheduleId=%d sequenceId=%d",
 		req.GimmickSequenceScheduleId, req.GimmickSequenceId)
 	userId := CurrentUserId(ctx, s.users, s.sessions)
-	s.users.UpdateUser(userId, func(user *store.UserState) {
-		key := store.GimmickSequenceKey{
-			GimmickSequenceScheduleId: req.GimmickSequenceScheduleId,
-			GimmickSequenceId:         req.GimmickSequenceId,
-		}
-		sequence := user.Gimmick.Sequences[key]
-		sequence.Key = key
-		user.Gimmick.Sequences[key] = sequence
-	})
+	// Targeted single-row upsert. The client fires this once per sequence in a
+	// burst on map load; the previous full UpdateUser cycle (LoadUser + clone +
+	// diff) per call made map loads take many seconds. UpdateSequence is also
+	// listed in the diff interceptor's skip set so it no longer triggers the
+	// surrounding before/after full-state loads either.
+	if err := s.users.EnsureGimmickSequence(userId, req.GimmickSequenceScheduleId, req.GimmickSequenceId); err != nil {
+		return nil, err
+	}
 	return &pb.UpdateSequenceResponse{}, nil
 }
 

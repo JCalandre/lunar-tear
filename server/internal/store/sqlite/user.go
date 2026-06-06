@@ -264,3 +264,18 @@ func (s *SQLiteStore) UpdateUser(userId int64, mutate func(*store.UserState)) (s
 
 	return after, nil
 }
+
+// EnsureGimmickSequence inserts a fresh (not-cleared) sequence row only when one
+// does not already exist. INSERT OR IGNORE leaves an existing cleared row intact,
+// matching the old handler that read the row, set its key, and wrote it back. This
+// is a single statement — no full-user load, clone, or diff.
+func (s *SQLiteStore) EnsureGimmickSequence(userId int64, scheduleId, sequenceId int32) error {
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO user_gimmick_sequences
+		(user_id, gimmick_sequence_schedule_id, gimmick_sequence_id, is_gimmick_sequence_cleared, clear_datetime, latest_version)
+		VALUES (?, ?, ?, 0, 0, 0)`,
+		userId, scheduleId, sequenceId)
+	if err != nil {
+		return fmt.Errorf("ensure gimmick sequence: %w", err)
+	}
+	return nil
+}

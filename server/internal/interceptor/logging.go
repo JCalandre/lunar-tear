@@ -3,6 +3,7 @@ package interceptor
 import (
 	"context"
 	"log"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -11,11 +12,13 @@ import (
 
 func Logging(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 	log.Printf(">>> %s", info.FullMethod)
+	start := time.Now()
 	resp, err := handler(ctx, req)
+	elapsed := time.Since(start)
 	if err != nil {
-		log.Printf("<<< %s ERROR: %v", info.FullMethod, err)
+		log.Printf("<<< %s ERROR (%s): %v", info.FullMethod, elapsed, err)
 	} else {
-		log.Printf("<<< %s OK", info.FullMethod)
+		log.Printf("<<< %s OK (%s)", info.FullMethod, elapsed)
 	}
 	return resp, err
 }
