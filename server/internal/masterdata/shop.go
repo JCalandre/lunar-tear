@@ -119,6 +119,9 @@ func LoadShopCatalog() (*ShopCatalog, error) {
 					sc = append(sc, ExchangeShopCell{cg.SortOrder, itemId})
 				}
 			}
+			if len(sc) == 0 {
+				continue
+			}
 			sort.Slice(sc, func(i, j int) bool { return sc[i].SortOrder < sc[j].SortOrder })
 			catalog.ExchangeShopCells[s.ShopId] = sc
 		}

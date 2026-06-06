@@ -284,7 +284,9 @@ func (h *GachaHandler) grantItems(user *store.UserState, items []DrawnItem, nowM
 			h.Granter.GrantWeapon(user, item.PossessionId, nowMillis)
 		default:
 			if item.PossessionType != 0 {
-				store.GrantPossession(user, model.PossessionType(item.PossessionType), item.PossessionId, 1)
+				// GrantFull routes parts/companion/etc. to their proper grant
+				// path; bare GrantPossession would silently drop those types.
+				h.Granter.GrantFull(user, model.PossessionType(item.PossessionType), item.PossessionId, 1, nowMillis)
 			}
 		}
 	}

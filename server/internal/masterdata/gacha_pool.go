@@ -271,7 +271,14 @@ func LoadGachaPool() (*GachaCatalog, error) {
 func (pool *GachaCatalog) BuildShopFeatured(shop *ShopCatalog) {
 	pool.ShopFeaturedByMedal = make(map[int32][]ShopFeaturedEntry)
 	for _, cells := range shop.ExchangeShopCells {
-		consumableId := shop.Items[cells[0].ShopItemId].PriceId
+		if len(cells) == 0 {
+			continue
+		}
+		firstItem, ok := shop.Items[cells[0].ShopItemId]
+		if !ok {
+			continue
+		}
+		consumableId := firstItem.PriceId
 
 		var entries []ShopFeaturedEntry
 		for _, cell := range cells {

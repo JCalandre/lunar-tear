@@ -175,6 +175,7 @@ func (s *GachaServiceServer) Draw(ctx context.Context, req *pb.DrawRequest) (*pb
 		for _, w := range user.Weapons {
 			ownedWeapons[w.WeaponId] = true
 		}
+		user.EnsureMaps()
 		var drawErr error
 		drawResult, drawErr = handler.HandleDraw(user, *entry, req.GachaPricePhaseId, execCount)
 		if drawErr != nil {
@@ -254,10 +255,13 @@ func (s *GachaServiceServer) Draw(ctx context.Context, req *pb.DrawRequest) (*pb
 		}
 
 		if drawResult.MedalBonus > 0 && entry.MedalConsumableItemId != 0 {
+			// One medal/shard is granted per pull, so report 1 per drawn item
+			// instead of a hard-coded 0 (which made single pulls show no shard
+			// and 10-pulls show the whole batch on one item).
 			oddsItem.MedalBonus = &pb.GachaBonus{
 				PossessionType: int32(model.PossessionTypeConsumableItem),
 				PossessionId:   entry.MedalConsumableItemId,
-				Count:          0,
+				Count:          1,
 			}
 		}
 
@@ -360,6 +364,7 @@ func (s *GachaServiceServer) RewardDraw(ctx context.Context, req *pb.RewardDrawR
 		for _, w := range user.Weapons {
 			ownedWeapons[w.WeaponId] = true
 		}
+		user.EnsureMaps()
 		var drawErr error
 		items, drawErr = handler.HandleRewardDraw(user, 1)
 		if drawErr != nil {
