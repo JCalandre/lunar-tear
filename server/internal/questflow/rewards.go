@@ -165,7 +165,14 @@ func (h *QuestHandler) grantDropRewards(user *store.UserState, drops []RewardGra
 	for i := range drops {
 		d := drops[i]
 		if d.PossessionType == model.PossessionTypeParts || d.PossessionType == model.PossessionTypePartsEnhanced {
-			chosenId, sold := h.Granter.GrantOrSellPartsDrop(user, d.PossessionId, raritySet, rankSet, nowMillis)
+			// Parts (memoirs) are non-stackable: each is rolled and granted as
+			// its own inventory row. The drop Count was previously ignored, so a
+			// reward modelled as a single row with Count=N (e.g. a Variation
+			// quest's 3 memoirs) only ever granted one part. Roll/grant Count
+			// times instead.
+			chosenId, sold := grantPartsDropN(d.Count, func() (int32, bool) {
+				return h.Granter.GrantOrSellPartsDrop(user, d.PossessionId, raritySet, rankSet, nowMillis)
+			})
 			if sold {
 				// Sold parts have no inventory row, so the popup needs the rolled
 				// variant id; kept parts read theirs from the parts table diff.
@@ -176,6 +183,24 @@ func (h *QuestHandler) grantDropRewards(user *store.UserState, drops []RewardGra
 		}
 		h.applyRewardPossession(user, d.PossessionType, d.PossessionId, d.Count, nowMillis)
 	}
+}
+
+// grantPartsDropN rolls/grants a non-stackable parts drop count times (treating
+// count<1 as 1). grantOne returns the rolled variant id and whether it was
+// auto-sold. It reports the last sold variant id and whether any roll was sold,
+// for the reward popup.
+func grantPartsDropN(count int32, grantOne func() (int32, bool)) (lastSoldId int32, anySold bool) {
+	if count < 1 {
+		count = 1
+	}
+	for k := int32(0); k < count; k++ {
+		chosenId, sold := grantOne()
+		if sold {
+			lastSoldId = chosenId
+			anySold = true
+		}
+	}
+	return lastSoldId, anySold
 }
 
 func (h *QuestHandler) computeDropRewards(questDef masterdata.EntityMQuest, target campaign.QuestTarget, nowMillis int64) []RewardGrant {
