@@ -241,6 +241,98 @@ func applyCostumeAwakenItemAcquire(catalog *masterdata.CostumeCatalog, user *sto
 	log.Printf("[CostumeService] Awaken: granted thought id=%d", acq.PossessionId)
 }
 
+// RegisterLevelBonusConfirmed applies the per-character permanent "Karma" stat
+// bonus that carries across costumes of the same character. Each newly-confirmed
+// level (above the costume's existing ConfirmedBonusLevel, up to req.Level) adds
+// its EffectValue onto the character's CharacterCostumeLevelBonusState, so the
+// call is idempotent: re-calling with the same or a lower level adds nothing.
+//
+// Level-bonus rows carry no StatusCalculationType column and the observed
+// CostumeLevelBonusType values {3,7,9} are all additive, so the accumulated
+// state is keyed under a single fixed StatusCalculationTypeAdd.
+func (s *CostumeServiceServer) RegisterLevelBonusConfirmed(ctx context.Context, req *pb.RegisterLevelBonusConfirmedRequest) (*pb.RegisterLevelBonusConfirmedResponse, error) {
+	log.Printf("[CostumeService] RegisterLevelBonusConfirmed: costumeId=%d level=%d", req.CostumeId, req.Level)
+
+	cat := s.holder.Get()
+	catalog := cat.Costume
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	nowMillis := gametime.NowMillis()
+
+	_, err := s.users.UpdateUser(userId, func(user *store.UserState) {
+		cm, ok := catalog.Costumes[req.CostumeId]
+		if !ok {
+			log.Printf("[CostumeService] RegisterLevelBonusConfirmed: costume master id=%d not found", req.CostumeId)
+			return
+		}
+
+		release := user.CostumeLevelBonusReleaseStatuses[req.CostumeId]
+		release.CostumeId = req.CostumeId
+
+		applyCostumeLevelBonus(catalog, user, cm.CharacterId, req.CostumeId, release.ConfirmedBonusLevel, req.Level, nowMillis)
+
+		if req.Level > release.LastReleasedBonusLevel {
+			release.LastReleasedBonusLevel = req.Level
+		}
+		if req.Level > release.ConfirmedBonusLevel {
+			release.ConfirmedBonusLevel = req.Level
+		}
+		release.LatestVersion = nowMillis
+		user.CostumeLevelBonusReleaseStatuses[req.CostumeId] = release
+	})
+	if err != nil {
+		return nil, fmt.Errorf("costume register level bonus confirmed: %w", err)
+	}
+
+	return &pb.RegisterLevelBonusConfirmedResponse{}, nil
+}
+
+// applyCostumeLevelBonus accumulates the EffectValue of every level-bonus row in
+// (fromLevel, toLevel] onto the character's bonus state. Only newly-confirmed
+// levels contribute, which keeps the operation idempotent.
+func applyCostumeLevelBonus(catalog *masterdata.CostumeCatalog, user *store.UserState, characterId, costumeId, fromLevel, toLevel int32, nowMillis int64) {
+	if toLevel <= fromLevel {
+		return
+	}
+
+	calcType := model.StatusCalculationTypeAdd
+	key := store.CharacterCostumeLevelBonusKey{
+		CharacterId:           characterId,
+		StatusCalculationType: calcType,
+	}
+	state := user.CharacterCostumeLevelBonuses[key]
+	state.CharacterId = characterId
+	state.StatusCalculationType = calcType
+
+	changed := false
+	for _, row := range catalog.BonusesUpToLevel(costumeId, toLevel) {
+		if row.Level <= fromLevel {
+			continue
+		}
+		switch model.CostumeLevelBonusTypeToStat(row.CostumeLevelBonusType) {
+		case model.CostumeLevelBonusStatHp:
+			state.Hp += row.EffectValue
+		case model.CostumeLevelBonusStatAttack:
+			state.Attack += row.EffectValue
+		case model.CostumeLevelBonusStatVitality:
+			state.Vitality += row.EffectValue
+		case model.CostumeLevelBonusStatAgility:
+			state.Agility += row.EffectValue
+		case model.CostumeLevelBonusStatCriticalRatio:
+			state.CriticalRatio += row.EffectValue
+		default:
+			log.Printf("[CostumeService] RegisterLevelBonusConfirmed: unknown bonus type=%d (costumeId=%d level=%d)", row.CostumeLevelBonusType, costumeId, row.Level)
+			continue
+		}
+		changed = true
+	}
+	if !changed {
+		return
+	}
+
+	state.LatestVersion = nowMillis
+	user.CharacterCostumeLevelBonuses[key] = state
+}
+
 func (s *CostumeServiceServer) EnhanceActiveSkill(ctx context.Context, req *pb.EnhanceActiveSkillRequest) (*pb.EnhanceActiveSkillResponse, error) {
 	log.Printf("[CostumeService] EnhanceActiveSkill: uuid=%s addLevel=%d", req.UserCostumeUuid, req.AddLevelCount)
 

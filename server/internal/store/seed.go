@@ -154,9 +154,11 @@ func SeedUserState(userId int64, uuid string, nowMillis int64, platform model.Cl
 		CharacterBoardAbilities: make(map[CharacterBoardAbilityKey]CharacterBoardAbilityState),
 		CharacterBoardStatusUps: make(map[CharacterBoardStatusUpKey]CharacterBoardStatusUpState),
 
-		CostumeAwakenStatusUps: make(map[CostumeAwakenStatusKey]CostumeAwakenStatusUpState),
-		AutoSaleSettings:       make(map[int32]AutoSaleSettingState),
-		CharacterRebirths:      make(map[int32]CharacterRebirthState),
+		CostumeAwakenStatusUps:           make(map[CostumeAwakenStatusKey]CostumeAwakenStatusUpState),
+		CharacterCostumeLevelBonuses:     make(map[CharacterCostumeLevelBonusKey]CharacterCostumeLevelBonusState),
+		CostumeLevelBonusReleaseStatuses: make(map[int32]CostumeLevelBonusReleaseStatusState),
+		AutoSaleSettings:                 make(map[int32]AutoSaleSettingState),
+		CharacterRebirths:                make(map[int32]CharacterRebirthState),
 	}
 	return user
 }

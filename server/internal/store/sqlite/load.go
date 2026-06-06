@@ -57,6 +57,8 @@ func initMaps(u *store.UserState) {
 	u.WeaponAwakens = make(map[string]store.WeaponAwakenState)
 	u.CostumeActiveSkills = make(map[string]store.CostumeActiveSkillState)
 	u.CostumeAwakenStatusUps = make(map[store.CostumeAwakenStatusKey]store.CostumeAwakenStatusUpState)
+	u.CharacterCostumeLevelBonuses = make(map[store.CharacterCostumeLevelBonusKey]store.CharacterCostumeLevelBonusState)
+	u.CostumeLevelBonusReleaseStatuses = make(map[int32]store.CostumeLevelBonusReleaseStatusState)
 	u.CostumeLotteryEffects = make(map[store.CostumeLotteryEffectKey]store.CostumeLotteryEffectState)
 	u.CostumeLotteryEffectPending = make(map[string]store.CostumeLotteryEffectPendingState)
 	u.Parts = make(map[string]store.PartsState)
@@ -450,6 +452,27 @@ func loadMapTables(db *sql.DB, uid int64, u *store.UserState) {
 			u.CostumeAwakenStatusUps[store.CostumeAwakenStatusKey{
 				UserCostumeUuid: v.UserCostumeUuid, StatusCalculationType: v.StatusCalculationType,
 			}] = v
+		})
+
+	queryRows(db, `SELECT character_id, status_calculation_type, hp, attack, vitality, agility,
+		critical_ratio, critical_attack, latest_version FROM user_character_costume_level_bonuses WHERE user_id=?`, uid,
+		func(rows *sql.Rows) {
+			var v store.CharacterCostumeLevelBonusState
+			var sct int32
+			rows.Scan(&v.CharacterId, &sct, &v.Hp, &v.Attack, &v.Vitality, &v.Agility,
+				&v.CriticalRatio, &v.CriticalAttack, &v.LatestVersion)
+			v.StatusCalculationType = model.StatusCalculationType(sct)
+			u.CharacterCostumeLevelBonuses[store.CharacterCostumeLevelBonusKey{
+				CharacterId: v.CharacterId, StatusCalculationType: v.StatusCalculationType,
+			}] = v
+		})
+
+	queryRows(db, `SELECT costume_id, last_released_bonus_level, confirmed_bonus_level, latest_version
+		FROM user_costume_level_bonus_release_statuses WHERE user_id=?`, uid,
+		func(rows *sql.Rows) {
+			var v store.CostumeLevelBonusReleaseStatusState
+			rows.Scan(&v.CostumeId, &v.LastReleasedBonusLevel, &v.ConfirmedBonusLevel, &v.LatestVersion)
+			u.CostumeLevelBonusReleaseStatuses[v.CostumeId] = v
 		})
 
 	queryRows(db, `SELECT user_costume_uuid, slot_number, odds_number, latest_version

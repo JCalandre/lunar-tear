@@ -81,6 +81,8 @@ func CloneUserState(u UserState) UserState {
 	out.CharacterBoardAbilities = maps.Clone(u.CharacterBoardAbilities)
 	out.CharacterBoardStatusUps = maps.Clone(u.CharacterBoardStatusUps)
 	out.CostumeAwakenStatusUps = maps.Clone(u.CostumeAwakenStatusUps)
+	out.CharacterCostumeLevelBonuses = maps.Clone(u.CharacterCostumeLevelBonuses)
+	out.CostumeLevelBonusReleaseStatuses = maps.Clone(u.CostumeLevelBonusReleaseStatuses)
 	out.CostumeLotteryEffects = maps.Clone(u.CostumeLotteryEffects)
 	out.CostumeLotteryEffectPending = maps.Clone(u.CostumeLotteryEffectPending)
 	out.AutoSaleSettings = maps.Clone(u.AutoSaleSettings)

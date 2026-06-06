@@ -30,6 +30,21 @@ type CostumeCatalog struct {
 	LotteryEffects    map[[2]int32]EntityMCostumeLotteryEffect             // key: [costumeId, slotNumber]
 	LotteryEffectMats map[int32][]EntityMCostumeLotteryEffectMaterialGroup // key: materialGroupId (both unlock and draw)
 	LotteryEffectOdds map[int32][]EntityMCostumeLotteryEffectOddsGroup     // key: oddsGroupId
+
+	LevelBonusByCostumeId map[int32][]EntityMCostumeLevelBonus // key: costumeId; sorted by Level ascending
+}
+
+// BonusesUpToLevel returns the level-bonus rows for the given costume whose
+// Level is <= the supplied level. Rows are returned sorted by Level ascending.
+func (c *CostumeCatalog) BonusesUpToLevel(costumeId, level int32) []EntityMCostumeLevelBonus {
+	rows := c.LevelBonusByCostumeId[costumeId]
+	out := make([]EntityMCostumeLevelBonus, 0, len(rows))
+	for _, row := range rows {
+		if row.Level <= level {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 func LoadCostumeCatalog(matCatalog *MaterialCatalog) (*CostumeCatalog, error) {
@@ -96,6 +111,11 @@ func LoadCostumeCatalog(matCatalog *MaterialCatalog) (*CostumeCatalog, error) {
 		return nil, fmt.Errorf("load costume lottery effect odds group table: %w", err)
 	}
 
+	levelBonusRows, err := utils.ReadTable[EntityMCostumeLevelBonus]("m_costume_level_bonus")
+	if err != nil {
+		return nil, fmt.Errorf("load costume level bonus table: %w", err)
+	}
+
 	catalog := &CostumeCatalog{
 		Costumes:               make(map[int32]EntityMCostume, len(costumes)),
 		Materials:              matCatalog.ByType[model.MaterialTypeCostumeEnhancement],
@@ -118,6 +138,8 @@ func LoadCostumeCatalog(matCatalog *MaterialCatalog) (*CostumeCatalog, error) {
 		LotteryEffects:    make(map[[2]int32]EntityMCostumeLotteryEffect, len(lotteryEffectRows)),
 		LotteryEffectMats: make(map[int32][]EntityMCostumeLotteryEffectMaterialGroup),
 		LotteryEffectOdds: make(map[int32][]EntityMCostumeLotteryEffectOddsGroup),
+
+		LevelBonusByCostumeId: make(map[int32][]EntityMCostumeLevelBonus),
 	}
 
 	for _, row := range costumes {
@@ -204,6 +226,23 @@ func LoadCostumeCatalog(matCatalog *MaterialCatalog) (*CostumeCatalog, error) {
 	for _, row := range lotteryEffectOddsRows {
 		gid := row.CostumeLotteryEffectOddsGroupId
 		catalog.LotteryEffectOdds[gid] = append(catalog.LotteryEffectOdds[gid], row)
+	}
+
+	// Group level-bonus rows by their bonus-group id, then map each costume to
+	// the rows for its CostumeLevelBonusId so the bonus carries across costumes
+	// of the same group. Rows are sorted by Level ascending.
+	levelBonusByGroup := make(map[int32][]EntityMCostumeLevelBonus)
+	for _, row := range levelBonusRows {
+		levelBonusByGroup[row.CostumeLevelBonusId] = append(levelBonusByGroup[row.CostumeLevelBonusId], row)
+	}
+	for gid, rows := range levelBonusByGroup {
+		sort.Slice(rows, func(i, j int) bool { return rows[i].Level < rows[j].Level })
+		levelBonusByGroup[gid] = rows
+	}
+	for _, cm := range costumes {
+		if rows, ok := levelBonusByGroup[cm.CostumeLevelBonusId]; ok {
+			catalog.LevelBonusByCostumeId[cm.CostumeId] = rows
+		}
 	}
 
 	return catalog, nil
