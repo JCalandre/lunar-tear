@@ -96,8 +96,8 @@ func writeUserState(tx *sql.Tx, uid int64, u *store.UserState) error {
 		return err
 	}
 	for i, ci := range u.BigHuntBattleDetail.CostumeBattleInfo {
-		if err := exec(`INSERT INTO user_big_hunt_costume_battle_infos (user_id, wave_index, sort_order, costume_id, total_damage, hit_count, random_display_value_type, random_display_value) VALUES (?,?,?,?,?,?,?,?)`,
-			uid, ci.WaveIndex, i, ci.CostumeId, ci.TotalDamage, ci.HitCount, ci.RandomDisplayValueType, ci.RandomDisplayValue); err != nil {
+		if err := exec(`INSERT INTO user_big_hunt_costume_battle_infos (user_id, wave_index, sort_order, costume_id, total_damage, hit_count, random_display_value_type, random_display_value, is_alive) VALUES (?,?,?,?,?,?,?,?,?)`,
+			uid, ci.WaveIndex, i, ci.CostumeId, ci.TotalDamage, ci.HitCount, ci.RandomDisplayValueType, ci.RandomDisplayValue, boolToInt(ci.IsAlive)); err != nil {
 			return err
 		}
 	}
@@ -661,8 +661,8 @@ func diffAndSave(tx *sql.Tx, uid int64, before, after *store.UserState) error {
 			return err
 		}
 		for i, ci := range after.BigHuntBattleDetail.CostumeBattleInfo {
-			if err := exec(`INSERT INTO user_big_hunt_costume_battle_infos (user_id, wave_index, sort_order, costume_id, total_damage, hit_count, random_display_value_type, random_display_value) VALUES (?,?,?,?,?,?,?,?)`,
-				uid, ci.WaveIndex, i, ci.CostumeId, ci.TotalDamage, ci.HitCount, ci.RandomDisplayValueType, ci.RandomDisplayValue); err != nil {
+			if err := exec(`INSERT INTO user_big_hunt_costume_battle_infos (user_id, wave_index, sort_order, costume_id, total_damage, hit_count, random_display_value_type, random_display_value, is_alive) VALUES (?,?,?,?,?,?,?,?,?)`,
+				uid, ci.WaveIndex, i, ci.CostumeId, ci.TotalDamage, ci.HitCount, ci.RandomDisplayValueType, ci.RandomDisplayValue, boolToInt(ci.IsAlive)); err != nil {
 				return err
 			}
 		}
