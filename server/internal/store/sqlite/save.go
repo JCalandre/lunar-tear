@@ -295,6 +295,18 @@ func writeUserState(tx *sql.Tx, uid int64, u *store.UserState) error {
 			return err
 		}
 	}
+	for k, v := range u.CharacterCostumeLevelBonuses {
+		if err := exec(`INSERT INTO user_character_costume_level_bonuses (user_id, character_id, status_calculation_type, hp, attack, vitality, agility, critical_ratio, critical_attack, latest_version) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			uid, k.CharacterId, int32(k.StatusCalculationType), v.Hp, v.Attack, v.Vitality, v.Agility, v.CriticalRatio, v.CriticalAttack, v.LatestVersion); err != nil {
+			return err
+		}
+	}
+	for _, v := range u.CostumeLevelBonusReleaseStatuses {
+		if err := exec(`INSERT INTO user_costume_level_bonus_release_statuses (user_id, costume_id, last_released_bonus_level, confirmed_bonus_level, latest_version) VALUES (?,?,?,?,?)`,
+			uid, v.CostumeId, v.LastReleasedBonusLevel, v.ConfirmedBonusLevel, v.LatestVersion); err != nil {
+			return err
+		}
+	}
 	for k, v := range u.CostumeLotteryEffects {
 		if err := exec(`INSERT INTO user_costume_lottery_effects (user_id, user_costume_uuid, slot_number, odds_number, latest_version) VALUES (?,?,?,?,?)`,
 			uid, k.UserCostumeUuid, k.SlotNumber, v.OddsNumber, v.LatestVersion); err != nil {
@@ -907,6 +919,30 @@ func diffAndSave(tx *sql.Tx, uid int64, before, after *store.UserState) error {
 	for k := range before.CostumeAwakenStatusUps {
 		if _, ok := after.CostumeAwakenStatusUps[k]; !ok {
 			exec(`DELETE FROM user_costume_awaken_status_ups WHERE user_id=? AND user_costume_uuid=? AND status_calculation_type=?`, uid, k.UserCostumeUuid, int32(k.StatusCalculationType))
+		}
+	}
+
+	for k, v := range after.CharacterCostumeLevelBonuses {
+		if old, ok := before.CharacterCostumeLevelBonuses[k]; !ok || old != v {
+			exec(`INSERT OR REPLACE INTO user_character_costume_level_bonuses (user_id, character_id, status_calculation_type, hp, attack, vitality, agility, critical_ratio, critical_attack, latest_version) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+				uid, k.CharacterId, int32(k.StatusCalculationType), v.Hp, v.Attack, v.Vitality, v.Agility, v.CriticalRatio, v.CriticalAttack, v.LatestVersion)
+		}
+	}
+	for k := range before.CharacterCostumeLevelBonuses {
+		if _, ok := after.CharacterCostumeLevelBonuses[k]; !ok {
+			exec(`DELETE FROM user_character_costume_level_bonuses WHERE user_id=? AND character_id=? AND status_calculation_type=?`, uid, k.CharacterId, int32(k.StatusCalculationType))
+		}
+	}
+
+	for k, v := range after.CostumeLevelBonusReleaseStatuses {
+		if old, ok := before.CostumeLevelBonusReleaseStatuses[k]; !ok || old != v {
+			exec(`INSERT OR REPLACE INTO user_costume_level_bonus_release_statuses (user_id, costume_id, last_released_bonus_level, confirmed_bonus_level, latest_version) VALUES (?,?,?,?,?)`,
+				uid, v.CostumeId, v.LastReleasedBonusLevel, v.ConfirmedBonusLevel, v.LatestVersion)
+		}
+	}
+	for k := range before.CostumeLevelBonusReleaseStatuses {
+		if _, ok := after.CostumeLevelBonusReleaseStatuses[k]; !ok {
+			exec(`DELETE FROM user_costume_level_bonus_release_statuses WHERE user_id=? AND costume_id=?`, uid, k)
 		}
 	}
 

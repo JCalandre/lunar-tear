@@ -48,6 +48,7 @@ func FullClientTableMap(user store.UserState) map[string]string {
 		"IUserDeckLimitContentRestricted":         projectTable("IUserDeckLimitContentRestricted", user),
 		"IUserCostumeActiveSkill":                 projectTable("IUserCostumeActiveSkill", user),
 		"IUserCostumeAwakenStatusUp":              projectTable("IUserCostumeAwakenStatusUp", user),
+		"IUserCharacterCostumeLevelBonus":         projectTable("IUserCharacterCostumeLevelBonus", user),
 		"IUserCostumeLevelBonusReleaseStatus":     projectTable("IUserCostumeLevelBonusReleaseStatus", user),
 		"IUserCostumeLotteryEffect":               projectTable("IUserCostumeLotteryEffect", user),
 		"IUserCostumeLotteryEffectAbility":        projectTable("IUserCostumeLotteryEffectAbility", user),

@@ -94,6 +94,14 @@ func init() {
 		s, _ := utils.EncodeJSONMaps(sortedCostumeAwakenStatusUpRecords(user)...)
 		return s
 	})
+	register("IUserCharacterCostumeLevelBonus", func(user store.UserState) string {
+		s, _ := utils.EncodeJSONMaps(sortedCharacterCostumeLevelBonusRecords(user)...)
+		return s
+	})
+	register("IUserCostumeLevelBonusReleaseStatus", func(user store.UserState) string {
+		s, _ := utils.EncodeJSONMaps(sortedCostumeLevelBonusReleaseStatusRecords(user)...)
+		return s
+	})
 	register("IUserAutoSaleSettingDetail", func(user store.UserState) string {
 		s, _ := utils.EncodeJSONMaps(sortedAutoSaleSettingRecords(user)...)
 		return s
@@ -123,7 +131,6 @@ func init() {
 		return s
 	})
 	registerStatic(
-		"IUserCostumeLevelBonusReleaseStatus",
 		"IUserCostumeLotteryEffectAbility",
 		"IUserCostumeLotteryEffectStatusUp",
 	)
@@ -217,6 +224,57 @@ func sortedCostumeAwakenStatusUpRecords(user store.UserState) []map[string]any {
 			"criticalRatio":         row.CriticalRatio,
 			"criticalAttack":        row.CriticalAttack,
 			"latestVersion":         row.LatestVersion,
+		})
+	}
+	return records
+}
+
+func sortedCharacterCostumeLevelBonusRecords(user store.UserState) []map[string]any {
+	keys := make([]store.CharacterCostumeLevelBonusKey, 0, len(user.CharacterCostumeLevelBonuses))
+	for k := range user.CharacterCostumeLevelBonuses {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].CharacterId != keys[j].CharacterId {
+			return keys[i].CharacterId < keys[j].CharacterId
+		}
+		return keys[i].StatusCalculationType < keys[j].StatusCalculationType
+	})
+	records := make([]map[string]any, 0, len(keys))
+	for _, k := range keys {
+		row := user.CharacterCostumeLevelBonuses[k]
+		records = append(records, map[string]any{
+			"userId":                user.UserId,
+			"characterId":           row.CharacterId,
+			"statusCalculationType": int32(row.StatusCalculationType),
+			"hp":                    row.Hp,
+			"attack":                row.Attack,
+			"vitality":              row.Vitality,
+			"agility":               row.Agility,
+			"criticalRatio":         row.CriticalRatio,
+			"criticalAttack":        row.CriticalAttack,
+			"latestVersion":         row.LatestVersion,
+		})
+	}
+	return records
+}
+
+func sortedCostumeLevelBonusReleaseStatusRecords(user store.UserState) []map[string]any {
+	ids := make([]int, 0, len(user.CostumeLevelBonusReleaseStatuses))
+	for id := range user.CostumeLevelBonusReleaseStatuses {
+		ids = append(ids, int(id))
+	}
+	sort.Ints(ids)
+
+	records := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		row := user.CostumeLevelBonusReleaseStatuses[int32(id)]
+		records = append(records, map[string]any{
+			"userId":                 user.UserId,
+			"costumeId":              row.CostumeId,
+			"lastReleasedBonusLevel": row.LastReleasedBonusLevel,
+			"confirmedBonusLevel":    row.ConfirmedBonusLevel,
+			"latestVersion":          row.LatestVersion,
 		})
 	}
 	return records

@@ -250,6 +250,12 @@ func ChangedTables(before, after *store.UserState) []string {
 	if !mapsEqualStruct(before.CostumeAwakenStatusUps, after.CostumeAwakenStatusUps) {
 		add("IUserCostumeAwakenStatusUp")
 	}
+	if !mapsEqualStruct(before.CharacterCostumeLevelBonuses, after.CharacterCostumeLevelBonuses) {
+		add("IUserCharacterCostumeLevelBonus")
+	}
+	if !mapsEqualStruct(before.CostumeLevelBonusReleaseStatuses, after.CostumeLevelBonusReleaseStatuses) {
+		add("IUserCostumeLevelBonusReleaseStatus")
+	}
 	if !mapsEqualStruct(before.CostumeLotteryEffects, after.CostumeLotteryEffects) {
 		add("IUserCostumeLotteryEffect")
 	}
@@ -419,6 +425,10 @@ func keyFieldsForTable(table string) []string {
 		return []string{"userId", "userCostumeUuid"}
 	case "IUserCostumeAwakenStatusUp":
 		return []string{"userId", "userCostumeUuid", "statusCalculationType"}
+	case "IUserCharacterCostumeLevelBonus":
+		return []string{"userId", "characterId", "statusCalculationType"}
+	case "IUserCostumeLevelBonusReleaseStatus":
+		return []string{"userId", "costumeId"}
 	case "IUserCostumeLotteryEffect":
 		return []string{"userId", "userCostumeUuid", "slotNumber"}
 	case "IUserCostumeLotteryEffectPending":

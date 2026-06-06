@@ -128,6 +128,9 @@ type UserState struct {
 	PvpAttackLog           []BattleLogEntry
 	PvpDefenseLog          []BattleLogEntry
 	PvpMatching            []MatchingEntry
+
+	CharacterCostumeLevelBonuses     map[CharacterCostumeLevelBonusKey]CharacterCostumeLevelBonusState
+	CostumeLevelBonusReleaseStatuses map[int32]CostumeLevelBonusReleaseStatusState // key: costumeId
 }
 
 func (u *UserState) EnsureMaps() {
@@ -289,6 +292,12 @@ func (u *UserState) EnsureMaps() {
 	}
 	if u.CostumeAwakenStatusUps == nil {
 		u.CostumeAwakenStatusUps = make(map[CostumeAwakenStatusKey]CostumeAwakenStatusUpState)
+	}
+	if u.CharacterCostumeLevelBonuses == nil {
+		u.CharacterCostumeLevelBonuses = make(map[CharacterCostumeLevelBonusKey]CharacterCostumeLevelBonusState)
+	}
+	if u.CostumeLevelBonusReleaseStatuses == nil {
+		u.CostumeLevelBonusReleaseStatuses = make(map[int32]CostumeLevelBonusReleaseStatusState)
 	}
 	if u.CostumeLotteryEffects == nil {
 		u.CostumeLotteryEffects = make(map[CostumeLotteryEffectKey]CostumeLotteryEffectState)
@@ -1233,6 +1242,47 @@ type CostumeAwakenStatusUpState struct {
 	CriticalRatio         int32
 	CriticalAttack        int32
 	LatestVersion         int64
+}
+
+// CharacterCostumeLevelBonusKey keys the accumulated costume level bonus on the
+// character (so it carries across costumes of the same character) plus the stat
+// calculation type.
+type CharacterCostumeLevelBonusKey struct {
+	CharacterId           int32
+	StatusCalculationType model.StatusCalculationType
+}
+
+func (k CharacterCostumeLevelBonusKey) MarshalText() ([]byte, error) {
+	return marshalKey(int64(k.CharacterId), int64(k.StatusCalculationType)), nil
+}
+
+func (k *CharacterCostumeLevelBonusKey) UnmarshalText(text []byte) error {
+	v, err := unmarshalKey(text, "CharacterCostumeLevelBonusKey", 2)
+	if err != nil {
+		return err
+	}
+	k.CharacterId = int32(v[0])
+	k.StatusCalculationType = model.StatusCalculationType(v[1])
+	return nil
+}
+
+type CharacterCostumeLevelBonusState struct {
+	CharacterId           int32
+	StatusCalculationType model.StatusCalculationType
+	Hp                    int32
+	Attack                int32
+	Vitality              int32
+	Agility               int32
+	CriticalRatio         int32
+	CriticalAttack        int32
+	LatestVersion         int64
+}
+
+type CostumeLevelBonusReleaseStatusState struct {
+	CostumeId              int32
+	LastReleasedBonusLevel int32
+	ConfirmedBonusLevel    int32
+	LatestVersion          int64
 }
 
 type AutoSaleSettingState struct {
