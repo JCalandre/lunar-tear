@@ -342,7 +342,15 @@ func (pool *GachaCatalog) BuildFeaturedFromTerms(entries []store.GachaCatalogEnt
 			}
 		}
 		if len(costumes) == 0 && len(weapons) == 0 {
-			continue
+			// Restored medal-less banners (ticket-era / event re-runs) have no
+			// term-featured items and can't use the medal-shop fallback, so they
+			// would otherwise be served with an empty promotion set -- which the
+			// client cannot render, blanking the whole gacha list. Fall back to
+			// the standard pool so every shown banner has promotion items.
+			costumes, weapons = pool.featuredFromStandardPool()
+			if len(costumes) == 0 && len(weapons) == 0 {
+				continue
+			}
 		}
 		sort.Slice(costumes, func(i, j int) bool { return costumes[i].PossessionId < costumes[j].PossessionId })
 		sort.Slice(weapons, func(i, j int) bool { return weapons[i].PossessionId < weapons[j].PossessionId })
@@ -407,6 +415,32 @@ func (pool *GachaCatalog) featuredFromShop(shopEntries []ShopFeaturedEntry) (cos
 		}
 	}
 	return costumes, weapons
+}
+
+// featuredFromStandardPool returns a generic featured set (the top-rarity items
+// of the cross-banner standard pool) for banners that have no featured data of
+// their own. It guarantees a non-empty promotion set so the banner is
+// renderable; the items shown are generic rather than banner-specific.
+func (pool *GachaCatalog) featuredFromStandardPool() (costumes, weapons []GachaPoolItem) {
+	costumes = topRarityPoolItems(pool.StandardCostumesByRarity, 4)
+	weapons = topRarityPoolItems(pool.StandardWeaponsByRarity, 2)
+	return costumes, weapons
+}
+
+func topRarityPoolItems(byRarity map[int32][]GachaPoolItem, limit int) []GachaPoolItem {
+	maxRarity := int32(0)
+	for r := range byRarity {
+		if r > maxRarity {
+			maxRarity = r
+		}
+	}
+	src := byRarity[maxRarity]
+	if len(src) > limit {
+		src = src[:limit]
+	}
+	out := make([]GachaPoolItem, len(src))
+	copy(out, src)
+	return out
 }
 
 func (pool *GachaCatalog) BuildBannerPools(entries []store.GachaCatalogEntry) {

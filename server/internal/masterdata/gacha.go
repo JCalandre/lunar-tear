@@ -41,6 +41,15 @@ func LoadGachaCatalog() ([]store.GachaCatalogEntry, map[int32]GachaMedalInfo, er
 		}
 	}
 
+	entries := buildGachaEntries(banners, gachaToMedal)
+
+	return entries, medalInfoByGacha, nil
+}
+
+// buildGachaEntries converts raw m_mom_banner rows into catalog entries.
+// Extracted as a pure function (no masterdata I/O) so the banner
+// classification and medal-gating rules can be unit tested.
+func buildGachaEntries(banners []EntityMMomBanner, gachaToMedal map[int32]EntityMGachaMedal) []store.GachaCatalogEntry {
 	stepupSteps := make(map[int32][]EntityMMomBanner)
 	var entries []store.GachaCatalogEntry
 
@@ -51,9 +60,8 @@ func LoadGachaCatalog() ([]store.GachaCatalogEntry, map[int32]GachaMedalInfo, er
 		gachaId := b.DestinationDomainId
 
 		if strings.HasPrefix(b.BannerAssetName, model.BannerPrefixStepUp) {
-			if _, hasMedal := gachaToMedal[gachaId]; !hasMedal {
-				continue
-			}
+			// Step-up banners no longer require a m_gacha_medal row; many
+			// ticket-era step-ups have none. Missing medal => no pity ceiling.
 			groupId := gachaId / model.StepUpGroupDivisor
 			stepupSteps[groupId] = append(stepupSteps[groupId], b)
 			continue
@@ -73,10 +81,13 @@ func LoadGachaCatalog() ([]store.GachaCatalogEntry, map[int32]GachaMedalInfo, er
 			modeType = model.GachaModeBox
 		}
 
+		// A missing m_gacha_medal row no longer drops the banner: most
+		// ticket-era / event / re-run banners have no medal-exchange row and
+		// were being silently excluded from the catalog. They simply get no
+		// medal/pity (GachaMedalId=0, MedalConsumableItemId=0, CeilingCount=0),
+		// which the draw/serialize paths already tolerate (chapter banners do
+		// the same today).
 		medal, hasMedal := gachaToMedal[gachaId]
-		if !hasMedal && !isChapter {
-			continue
-		}
 		var medalId int32
 		var medalConsumableId int32
 		var ceilingCount int32
@@ -128,9 +139,13 @@ func LoadGachaCatalog() ([]store.GachaCatalogEntry, map[int32]GachaMedalInfo, er
 		first := steps[0]
 		gachaId := first.DestinationDomainId
 
-		medal := gachaToMedal[first.DestinationDomainId]
+		medal, hasMedal := gachaToMedal[first.DestinationDomainId]
 		medalId := medal.GachaMedalId
 		medalConsumableId := medal.ConsumableItemId
+		ceilingCount := int32(0)
+		if hasMedal {
+			ceilingCount = model.PityCeilingCount
+		}
 
 		pricePhases := buildStepUpPricePhases(gachaId, len(steps))
 
@@ -155,13 +170,13 @@ func LoadGachaCatalog() ([]store.GachaCatalogEntry, map[int32]GachaMedalInfo, er
 			SortOrder:             first.SortOrderDesc,
 			BannerAssetName:       first.BannerAssetName,
 			GroupId:               gachaId,
-			CeilingCount:          model.PityCeilingCount,
+			CeilingCount:          ceilingCount,
 			PricePhases:           pricePhases,
 			MaxStepNumber:         maxStep,
 		})
 	}
 
-	return entries, medalInfoByGacha, nil
+	return entries
 }
 
 const chapterPromoMaxItems = 4
