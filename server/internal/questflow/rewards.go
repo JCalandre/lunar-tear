@@ -346,6 +346,7 @@ func (h *QuestHandler) applyFirstClearItemRewards(user *store.UserState, questId
 	}
 	rewardGroupId := h.firstClearRewardGroupId(user, questDef)
 	for _, reward := range h.FirstClearRewardsByGroupId[rewardGroupId] {
+		logQuestLoot(questId, "first-clear", model.PossessionType(reward.PossessionType), reward.PossessionId, reward.Count)
 		h.applyRewardPossession(user, model.PossessionType(reward.PossessionType), reward.PossessionId, reward.Count, nowMillis)
 	}
 }
@@ -357,6 +358,56 @@ func (h *QuestHandler) applyQuestRewards(user *store.UserState, questId int32, n
 
 func (h *QuestHandler) applyRewardPossession(user *store.UserState, possType model.PossessionType, possId, count int32, nowMillis int64) {
 	h.Granter.GrantFull(user, possType, possId, count, nowMillis)
+}
+
+// possessionTypeLabel gives a human-readable name for a possession type, for
+// diagnostic logging.
+func possessionTypeLabel(t model.PossessionType) string {
+	switch t {
+	case model.PossessionTypeCostume:
+		return "Costume"
+	case model.PossessionTypeCostumeEnhanced:
+		return "CostumeEnh"
+	case model.PossessionTypeWeapon:
+		return "Weapon"
+	case model.PossessionTypeWeaponEnhanced:
+		return "WeaponEnh"
+	case model.PossessionTypeCompanion:
+		return "Companion"
+	case model.PossessionTypeCompanionEnhanced:
+		return "CompanionEnh"
+	case model.PossessionTypeParts:
+		return "Parts"
+	case model.PossessionTypePartsEnhanced:
+		return "PartsEnh"
+	case model.PossessionTypeMaterial:
+		return "Material"
+	case model.PossessionTypeConsumableItem:
+		return "Consumable"
+	case model.PossessionTypeImportantItem:
+		return "Important"
+	case model.PossessionTypePremiumItem:
+		return "Premium"
+	case model.PossessionTypePaidGem:
+		return "PaidGem"
+	case model.PossessionTypeFreeGem:
+		return "FreeGem"
+	default:
+		return fmt.Sprintf("Type%d", int32(t))
+	}
+}
+
+// logQuestLoot logs one reward and the source it came from, for diagnosing what
+// a quest actually grants.
+func logQuestLoot(questId int32, source string, possType model.PossessionType, possId, count int32) {
+	log.Printf("[QuestLoot] quest=%d source=%-18s type=%-11s id=%-8d count=%d",
+		questId, source, possessionTypeLabel(possType), possId, count)
+}
+
+func logQuestLootList(questId int32, source string, grants []RewardGrant) {
+	for _, g := range grants {
+		logQuestLoot(questId, source, g.PossessionType, g.PossessionId, g.Count)
+	}
 }
 
 func (h *QuestHandler) grantWeaponStoryUnlock(user *store.UserState, weaponId, storyIndex int32, nowMillis int64) bool {
