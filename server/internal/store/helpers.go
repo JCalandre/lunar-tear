@@ -242,22 +242,20 @@ func (g *PossessionGranter) grantBareParts(user *UserState, partsId int32, nowMi
 	log.Printf("[GrantParts] unknown partsId=%d, granted as-is with no variant roll", partsId)
 }
 
-// rollPartsVariant picks one of a parts group's 5 variants at random; the five
-// carry distinct PartsInitialLotteryId 1..5, which is the part's rank.
+// rollPartsVariant resolves which part a parts drop grants. The drop names a
+// specific part id and that exact part must be granted: each id within a
+// group+rarity is a distinct collectible, NOT a rank of one item. For example
+// group 401 rarity 10 holds five different crossover unlock shards
+// ("Automata Crossover", "Bloody Gunman", ...), and group 1 holds five
+// different bears -- the previous random pick handed out a wrong item, so
+// farming a quest for one specific shard could never accumulate it. Only the
+// part's sub-stats are randomized, later, in createParts.
 func (g *PossessionGranter) rollPartsVariant(requestedPartsId int32) (int32, PartsRef, bool) {
-	ref, refOk := g.PartsById[requestedPartsId]
-	if !refOk {
+	ref, ok := g.PartsById[requestedPartsId]
+	if !ok {
 		return requestedPartsId, PartsRef{}, false
 	}
-	chosenPartsId := requestedPartsId
-	chosenRef := ref
-	if variants := g.PartsVariantsByGroupRarity[ref.PartsGroupId][ref.RarityType]; len(variants) == 5 {
-		chosenPartsId = variants[rand.Intn(len(variants))]
-		chosenRef = g.PartsById[chosenPartsId]
-	} else {
-		log.Printf("[GrantParts] no 5-variant set for group=%d rarity=%d (have %d), granting requested=%d", ref.PartsGroupId, ref.RarityType, len(variants), requestedPartsId)
-	}
-	return chosenPartsId, chosenRef, true
+	return requestedPartsId, ref, true
 }
 
 func (g *PossessionGranter) createParts(user *UserState, chosenPartsId int32, chosenRef PartsRef, nowMillis int64) {

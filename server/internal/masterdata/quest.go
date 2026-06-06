@@ -39,6 +39,11 @@ type QuestCatalog struct {
 	BattleOnlyTargetSceneByQuestId     map[int32]int32
 	MainQuestChapterIdByQuestId        map[int32]int32
 	EventQuestTypeByChapterId          map[int32]int32
+	// ChapterMemoirsByQuestId maps an event quest id to the memoir (Parts) ids
+	// advertised by its chapter's display item group. Event chapters advertise a
+	// set of memoirs (one per series) but the per-quest drop data only wires one,
+	// leaving the rest unobtainable; these are granted on finish instead.
+	ChapterMemoirsByQuestId map[int32][]int32
 
 	UserExpThresholds       []int32
 	CharacterExpThresholds  []int32
@@ -401,6 +406,51 @@ func LoadQuestCatalog(partsCatalog *PartsCatalog) (*QuestCatalog, error) {
 		eventQuestTypeByChapterId[ec.EventQuestChapterId] = ec.EventQuestType
 	}
 
+	// Map each event quest to the memoir (Parts) set its chapter advertises in
+	// the display item group, resolving chapter -> sequence group -> sequences ->
+	// quests. The advertised memoirs span several series but the per-quest drop
+	// data only wires one of them, so the others are otherwise unobtainable.
+	eventDisplayItems, err := utils.ReadTable[EntityMEventQuestDisplayItemGroup]("m_event_quest_display_item_group")
+	if err != nil {
+		return nil, fmt.Errorf("load event quest display item group table: %w", err)
+	}
+	eventSequences, err := utils.ReadTable[EntityMEventQuestSequence]("m_event_quest_sequence")
+	if err != nil {
+		return nil, fmt.Errorf("load event quest sequence table: %w", err)
+	}
+	eventSequenceGroups, err := utils.ReadTable[EntityMEventQuestSequenceGroup]("m_event_quest_sequence_group")
+	if err != nil {
+		return nil, fmt.Errorf("load event quest sequence group table: %w", err)
+	}
+	memoirsByDisplayGroupId := make(map[int32][]int32)
+	for _, d := range eventDisplayItems {
+		if d.PossessionType == 4 { // PossessionTypeParts == memoirs
+			memoirsByDisplayGroupId[d.EventQuestDisplayItemGroupId] = append(
+				memoirsByDisplayGroupId[d.EventQuestDisplayItemGroupId], d.PossessionId)
+		}
+	}
+	questIdsBySequenceId := make(map[int32][]int32)
+	for _, s := range eventSequences {
+		questIdsBySequenceId[s.EventQuestSequenceId] = append(questIdsBySequenceId[s.EventQuestSequenceId], s.QuestId)
+	}
+	sequenceIdsByGroupId := make(map[int32][]int32)
+	for _, sg := range eventSequenceGroups {
+		sequenceIdsByGroupId[sg.EventQuestSequenceGroupId] = append(
+			sequenceIdsByGroupId[sg.EventQuestSequenceGroupId], sg.EventQuestSequenceId)
+	}
+	chapterMemoirsByQuestId := make(map[int32][]int32)
+	for _, ec := range eventChapters {
+		memoirs := memoirsByDisplayGroupId[ec.EventQuestDisplayItemGroupId]
+		if len(memoirs) == 0 {
+			continue
+		}
+		for _, seqId := range sequenceIdsByGroupId[ec.EventQuestSequenceGroupId] {
+			for _, qid := range questIdsBySequenceId[seqId] {
+				chapterMemoirsByQuestId[qid] = memoirs
+			}
+		}
+	}
+
 	sortedChapters := make([]EntityMMainQuestChapter, len(chapters))
 	copy(sortedChapters, chapters)
 	sort.Slice(sortedChapters, func(i, j int) bool {
@@ -604,6 +654,7 @@ func LoadQuestCatalog(partsCatalog *PartsCatalog) (*QuestCatalog, error) {
 		BattleOnlyTargetSceneByQuestId:     battleOnlyTargetSceneByQuestId,
 		MainQuestChapterIdByQuestId:        mainQuestChapterIdByQuestId,
 		EventQuestTypeByChapterId:          eventQuestTypeByChapterId,
+		ChapterMemoirsByQuestId:            chapterMemoirsByQuestId,
 
 		UserExpThresholds:       BuildExpThresholds(paramMapRows, 1),
 		CharacterExpThresholds:  BuildExpThresholds(paramMapRows, 31),

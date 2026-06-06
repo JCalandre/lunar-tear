@@ -165,7 +165,14 @@ func (h *QuestHandler) grantDropRewards(user *store.UserState, drops []RewardGra
 	for i := range drops {
 		d := drops[i]
 		if d.PossessionType == model.PossessionTypeParts || d.PossessionType == model.PossessionTypePartsEnhanced {
-			chosenId, sold := h.Granter.GrantOrSellPartsDrop(user, d.PossessionId, raritySet, rankSet, nowMillis)
+			// Parts (memoirs) are non-stackable: each is rolled and granted as
+			// its own inventory row. The drop Count was previously ignored, so a
+			// reward modelled as a single row with Count=N (e.g. a Variation
+			// quest's 3 memoirs) only ever granted one part. Roll/grant Count
+			// times instead.
+			chosenId, sold := grantPartsDropN(d.Count, func() (int32, bool) {
+				return h.Granter.GrantOrSellPartsDrop(user, d.PossessionId, raritySet, rankSet, nowMillis)
+			})
 			if sold {
 				// Sold parts have no inventory row, so the popup needs the rolled
 				// variant id; kept parts read theirs from the parts table diff.
@@ -178,22 +185,58 @@ func (h *QuestHandler) grantDropRewards(user *store.UserState, drops []RewardGra
 	}
 }
 
+// grantPartsDropN rolls/grants a non-stackable parts drop count times (treating
+// count<1 as 1). grantOne returns the rolled variant id and whether it was
+// auto-sold. It reports the last sold variant id and whether any roll was sold,
+// for the reward popup.
+func grantPartsDropN(count int32, grantOne func() (int32, bool)) (lastSoldId int32, anySold bool) {
+	if count < 1 {
+		count = 1
+	}
+	for k := int32(0); k < count; k++ {
+		chosenId, sold := grantOne()
+		if sold {
+			lastSoldId = chosenId
+			anySold = true
+		}
+	}
+	return lastSoldId, anySold
+}
+
 func (h *QuestHandler) computeDropRewards(questDef masterdata.EntityMQuest, target campaign.QuestTarget, nowMillis int64) []RewardGrant {
 	var drops []RewardGrant
 	var dropRate campaign.DropRateMul
 	if h.Campaigns != nil {
 		dropRate = h.Campaigns.QuestDropRate(target, h.campaignFilter(nowMillis))
 	}
+
+	// Event chapters advertise a memoir set (one Parts per series) in their
+	// display item group, but the per-quest drop data only wires one of them, so
+	// the rest are unobtainable. When a quest has a chapter memoir set, drop the
+	// quest's single memoir Parts and grant the chapter's full advertised set.
+	chapterMemoirs := h.ChapterMemoirsByQuestId[questDef.QuestId]
+
 	if questDef.QuestPickupRewardGroupId != 0 {
 		for _, dropId := range h.PickupRewardIdsByGroupId[questDef.QuestPickupRewardGroupId] {
 			if bdr, ok := h.BattleDropRewardById[dropId]; ok {
+				pt := model.PossessionType(bdr.PossessionType)
+				if len(chapterMemoirs) > 0 && (pt == model.PossessionTypeParts || pt == model.PossessionTypePartsEnhanced) {
+					continue // replaced by the chapter memoir set below
+				}
 				drops = append(drops, RewardGrant{
-					PossessionType: model.PossessionType(bdr.PossessionType),
+					PossessionType: pt,
 					PossessionId:   bdr.PossessionId,
 					Count:          dropRate.Apply(bdr.Count),
 				})
 			}
 		}
+	}
+	for _, partId := range chapterMemoirs {
+		drops = append(drops, RewardGrant{
+			PossessionType: model.PossessionTypeParts,
+			PossessionId:   partId,
+			Count:          1,
+		})
 	}
 	return h.appendBonusDrops(drops, target, nowMillis)
 }
@@ -321,6 +364,7 @@ func (h *QuestHandler) applyFirstClearItemRewards(user *store.UserState, questId
 	}
 	rewardGroupId := h.firstClearRewardGroupId(user, questDef)
 	for _, reward := range h.FirstClearRewardsByGroupId[rewardGroupId] {
+		logQuestLoot(questId, "first-clear", model.PossessionType(reward.PossessionType), reward.PossessionId, reward.Count)
 		h.applyRewardPossession(user, model.PossessionType(reward.PossessionType), reward.PossessionId, reward.Count, nowMillis)
 	}
 }
@@ -332,6 +376,56 @@ func (h *QuestHandler) applyQuestRewards(user *store.UserState, questId int32, n
 
 func (h *QuestHandler) applyRewardPossession(user *store.UserState, possType model.PossessionType, possId, count int32, nowMillis int64) {
 	h.Granter.GrantFull(user, possType, possId, count, nowMillis)
+}
+
+// possessionTypeLabel gives a human-readable name for a possession type, for
+// diagnostic logging.
+func possessionTypeLabel(t model.PossessionType) string {
+	switch t {
+	case model.PossessionTypeCostume:
+		return "Costume"
+	case model.PossessionTypeCostumeEnhanced:
+		return "CostumeEnh"
+	case model.PossessionTypeWeapon:
+		return "Weapon"
+	case model.PossessionTypeWeaponEnhanced:
+		return "WeaponEnh"
+	case model.PossessionTypeCompanion:
+		return "Companion"
+	case model.PossessionTypeCompanionEnhanced:
+		return "CompanionEnh"
+	case model.PossessionTypeParts:
+		return "Parts"
+	case model.PossessionTypePartsEnhanced:
+		return "PartsEnh"
+	case model.PossessionTypeMaterial:
+		return "Material"
+	case model.PossessionTypeConsumableItem:
+		return "Consumable"
+	case model.PossessionTypeImportantItem:
+		return "Important"
+	case model.PossessionTypePremiumItem:
+		return "Premium"
+	case model.PossessionTypePaidGem:
+		return "PaidGem"
+	case model.PossessionTypeFreeGem:
+		return "FreeGem"
+	default:
+		return fmt.Sprintf("Type%d", int32(t))
+	}
+}
+
+// logQuestLoot logs one reward and the source it came from, for diagnosing what
+// a quest actually grants.
+func logQuestLoot(questId int32, source string, possType model.PossessionType, possId, count int32) {
+	log.Printf("[QuestLoot] quest=%d source=%-18s type=%-11s id=%-8d count=%d",
+		questId, source, possessionTypeLabel(possType), possId, count)
+}
+
+func logQuestLootList(questId int32, source string, grants []RewardGrant) {
+	for _, g := range grants {
+		logQuestLoot(questId, source, g.PossessionType, g.PossessionId, g.Count)
+	}
 }
 
 func (h *QuestHandler) grantWeaponStoryUnlock(user *store.UserState, weaponId, storyIndex int32, nowMillis int64) bool {

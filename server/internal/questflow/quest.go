@@ -196,16 +196,20 @@ func (h *QuestHandler) applyQuestVictory(user *store.UserState, questId int32, o
 				h.grantWeaponStoryUnlocksForQuestScene(user, questId, model.QuestResultTypeFullResult, nowMillis)...)
 		}
 
+		logQuestLootList(questId, "mission", outcome.MissionClearRewards)
 		for _, r := range outcome.MissionClearRewards {
 			h.applyRewardPossession(user, r.PossessionType, r.PossessionId, r.Count, nowMillis)
 		}
+		logQuestLootList(questId, "mission-complete", outcome.MissionClearCompleteRewards)
 		for _, r := range outcome.MissionClearCompleteRewards {
 			h.applyRewardPossession(user, r.PossessionType, r.PossessionId, r.Count, nowMillis)
 		}
 		questState.IsRewardGranted = true
 	}
 	raritySet, rankSet := parseAutoSaleRules(user.AutoSaleSettings)
+	logQuestLootList(questId, "drop", outcome.DropRewards)
 	h.grantDropRewards(user, outcome.DropRewards, raritySet, rankSet, nowMillis)
+	logQuestLootList(questId, "replay-first-clear", outcome.ReplayFlowFirstClearRewards)
 	for _, reward := range outcome.ReplayFlowFirstClearRewards {
 		h.applyRewardPossession(user, reward.PossessionType, reward.PossessionId, reward.Count, nowMillis)
 	}
