@@ -117,7 +117,9 @@ func (s *BigHuntServiceServer) FinishBigHuntQuest(ctx context.Context, req *pb.F
 
 		detail := user.BigHuntBattleDetail
 		totalDamage := detail.TotalDamage
-		baseScore := totalDamage
+		// Base score is the integer floor of total damage / 100, before any
+		// bonus multipliers are applied.
+		baseScore := totalDamage / 100
 
 		difficultyBonusPermil := int32(0)
 		if coeff, ok := catalog.ScoreCoefficients[bhQuest.BigHuntQuestScoreCoefficientId]; ok {
