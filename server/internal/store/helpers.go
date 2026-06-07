@@ -66,7 +66,33 @@ func DeductPossession(user *UserState, possessionType model.PossessionType, poss
 	}
 }
 
+// consumableMedalRemap fixes a masterdata defect where an event awards a tiered
+// medal variant ("Bronze/Silver/Gold/Copper X Medal") but the event's exchange
+// shop only accepts the base "X Medal", leaving the awarded medal unspendable.
+// The awarded tier variant is remapped to the spendable base medal.
+//
+//	53, 54     -> 22: Coffin of Repose Medal (Copper/Silver -> base)
+//	63, 64, 65 -> 29: Rhythm's Citadel Medal (Bronze/Silver/Gold -> base)
+var consumableMedalRemap = map[int32]int32{
+	53: 22, 54: 22, // Coffin of Repose Medal
+	63: 29, 64: 29, 65: 29, // Rhythm's Citadel Medal
+}
+
+// CanonicalConsumableMedalId returns the spendable base medal id for an awarded
+// consumable medal, leaving every other id unchanged. Applied both where rewards
+// are loaded for display (so quest reward popups already show the base medal)
+// and at grant time.
+func CanonicalConsumableMedalId(id int32) int32 {
+	if mapped, ok := consumableMedalRemap[id]; ok {
+		return mapped
+	}
+	return id
+}
+
 func GrantPossession(user *UserState, possessionType model.PossessionType, possessionId, count int32) {
+	if possessionType == model.PossessionTypeConsumableItem {
+		possessionId = CanonicalConsumableMedalId(possessionId)
+	}
 	switch possessionType {
 	case model.PossessionTypeMaterial:
 		user.Materials[possessionId] += count

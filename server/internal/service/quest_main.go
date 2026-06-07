@@ -107,12 +107,22 @@ func autoOrbitDropsToProto(drops []store.AutoOrbitDropEntry) []*pb.QuestReward {
 	for i, d := range drops {
 		out[i] = &pb.QuestReward{
 			PossessionType: d.PossessionType,
-			PossessionId:   d.PossessionId,
+			PossessionId:   canonicalRewardId(d.PossessionType, d.PossessionId),
 			Count:          d.Count,
 			IsAutoSale:     d.IsAutoSale,
 		}
 	}
 	return out
+}
+
+// canonicalRewardId remaps a reward's possession id for display so quest reward
+// popups show the spendable base medal -- matching what is actually granted --
+// without altering the masterdata catalog. The transform is purely server-side.
+func canonicalRewardId(possType, possId int32) int32 {
+	if possType == int32(model.PossessionTypeConsumableItem) {
+		return store.CanonicalConsumableMedalId(possId)
+	}
+	return possId
 }
 
 func toProtoRewards(grants []questflow.RewardGrant) []*pb.QuestReward {
@@ -123,7 +133,7 @@ func toProtoRewards(grants []questflow.RewardGrant) []*pb.QuestReward {
 	for i, g := range grants {
 		out[i] = &pb.QuestReward{
 			PossessionType: int32(g.PossessionType),
-			PossessionId:   g.PossessionId,
+			PossessionId:   canonicalRewardId(int32(g.PossessionType), g.PossessionId),
 			Count:          g.Count,
 			IsAutoSale:     g.IsAutoSale,
 		}
@@ -203,7 +213,7 @@ func (s *QuestServiceServer) FinishAutoOrbit(ctx context.Context, req *emptypb.E
 	for i, d := range drops {
 		pbDrops[i] = &pb.QuestReward{
 			PossessionType: d.PossessionType,
-			PossessionId:   d.PossessionId,
+			PossessionId:   canonicalRewardId(d.PossessionType, d.PossessionId),
 			Count:          d.Count,
 		}
 	}
