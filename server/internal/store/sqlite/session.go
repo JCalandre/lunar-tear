@@ -35,6 +35,15 @@ func (s *SQLiteStore) CreateSession(uuid string, ttl time.Duration) (store.Sessi
 }
 
 func (s *SQLiteStore) ResolveUserId(sessionKey string) (int64, error) {
+	now := s.clock()
+
+	s.sessionMu.RLock()
+	cached, ok := s.sessionCache[sessionKey]
+	s.sessionMu.RUnlock()
+	if ok && now.Before(cached.expireAt) {
+		return cached.userId, nil
+	}
+
 	var userId int64
 	var expireStr string
 	err := s.db.QueryRow(
@@ -48,9 +57,13 @@ func (s *SQLiteStore) ResolveUserId(sessionKey string) (int64, error) {
 	if err != nil {
 		return 0, store.ErrNotFound
 	}
-	if s.clock().After(expireAt) {
+	if now.After(expireAt) {
 		return 0, store.ErrNotFound
 	}
+
+	s.sessionMu.Lock()
+	s.sessionCache[sessionKey] = cachedSession{userId: userId, expireAt: expireAt}
+	s.sessionMu.Unlock()
 
 	return userId, nil
 }

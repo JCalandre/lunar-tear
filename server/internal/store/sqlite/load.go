@@ -13,6 +13,10 @@ func (s *SQLiteStore) LoadUser(userId int64) (store.UserState, error) {
 	var u store.UserState
 	var fbId sql.NullInt64
 
+	// Persist any buffered gimmick-sequence registrations before reading, so the
+	// loaded state (and its projection) reflects the map-load burst.
+	s.flushGimmickSequences(userId)
+
 	err := s.db.QueryRow(`SELECT user_id, uuid, player_id, os_type, platform_type, user_restriction_type,
 		register_datetime, game_start_datetime, latest_version, birth_year, birth_month,
 		backup_token, charge_money_this_month, facebook_id FROM users WHERE user_id = ?`, userId).Scan(
