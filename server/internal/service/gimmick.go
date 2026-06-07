@@ -26,8 +26,8 @@ func NewGimmickServiceServer(users store.UserRepository, sessions store.SessionR
 }
 
 func (s *GimmickServiceServer) UpdateSequence(ctx context.Context, req *pb.UpdateSequenceRequest) (*pb.UpdateSequenceResponse, error) {
-	log.Printf("[GimmickService] UpdateSequence: scheduleId=%d sequenceId=%d",
-		req.GimmickSequenceScheduleId, req.GimmickSequenceId)
+	// No per-call logging: the client fires this once per gimmick sequence in a
+	// burst on map load, and the per-call log I/O dominated the load time.
 	userId := CurrentUserId(ctx, s.users, s.sessions)
 	// Targeted single-row upsert. The client fires this once per sequence in a
 	// burst on map load; the previous full UpdateUser cycle (LoadUser + clone +

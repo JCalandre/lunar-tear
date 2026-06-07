@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	"lunar-tear/server/internal/model"
 	"lunar-tear/server/internal/store"
@@ -269,13 +270,73 @@ func (s *SQLiteStore) UpdateUser(userId int64, mutate func(*store.UserState)) (s
 // does not already exist. INSERT OR IGNORE leaves an existing cleared row intact,
 // matching the old handler that read the row, set its key, and wrote it back. This
 // is a single statement — no full-user load, clone, or diff.
+//
+// The client fires this once per gimmick sequence in a burst on map load, so the
+// registration is buffered in memory (deduped) rather than written per call. The
+// buffer is flushed in one batched transaction by flushGimmickSequences, which
+// LoadUser (the only reader of these rows) calls before reading -- keeping reads
+// consistent while the burst pays no per-call DB cost.
 func (s *SQLiteStore) EnsureGimmickSequence(userId int64, scheduleId, sequenceId int32) error {
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO user_gimmick_sequences
-		(user_id, gimmick_sequence_schedule_id, gimmick_sequence_id, is_gimmick_sequence_cleared, clear_datetime, latest_version)
-		VALUES (?, ?, ?, 0, 0, 0)`,
-		userId, scheduleId, sequenceId)
+	s.gimmickSeqMu.Lock()
+	set := s.gimmickSeqPending[userId]
+	if set == nil {
+		set = make(map[[2]int32]struct{})
+		s.gimmickSeqPending[userId] = set
+	}
+	set[[2]int32{scheduleId, sequenceId}] = struct{}{}
+	s.gimmickSeqMu.Unlock()
+	return nil
+}
+
+// flushGimmickSequences persists a user's buffered gimmick-sequence
+// registrations in one batched transaction. Called by LoadUser before it reads,
+// so the read sees the writes. On failure the rows are re-buffered for retry on
+// the next load (and the client re-syncs them every map load regardless).
+func (s *SQLiteStore) flushGimmickSequences(userId int64) {
+	s.gimmickSeqMu.Lock()
+	set := s.gimmickSeqPending[userId]
+	delete(s.gimmickSeqPending, userId)
+	s.gimmickSeqMu.Unlock()
+	if len(set) == 0 {
+		return
+	}
+
+	if err := s.writeGimmickSequences(userId, set); err != nil {
+		log.Printf("[gimmick] flush failed for user %d (%d sequences), will retry: %v", userId, len(set), err)
+		s.gimmickSeqMu.Lock()
+		existing := s.gimmickSeqPending[userId]
+		if existing == nil {
+			s.gimmickSeqPending[userId] = set
+		} else {
+			for k := range set {
+				existing[k] = struct{}{}
+			}
+		}
+		s.gimmickSeqMu.Unlock()
+	}
+}
+
+func (s *SQLiteStore) writeGimmickSequences(userId int64, set map[[2]int32]struct{}) error {
+	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("ensure gimmick sequence: %w", err)
+		return fmt.Errorf("flush gimmick sequences: begin: %w", err)
+	}
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO user_gimmick_sequences
+		(user_id, gimmick_sequence_schedule_id, gimmick_sequence_id, is_gimmick_sequence_cleared, clear_datetime, latest_version)
+		VALUES (?, ?, ?, 0, 0, 0)`)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("flush gimmick sequences: prepare: %w", err)
+	}
+	defer stmt.Close()
+	for k := range set {
+		if _, err := stmt.Exec(userId, k[0], k[1]); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("flush gimmick sequences: exec: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("flush gimmick sequences: commit: %w", err)
 	}
 	return nil
 }
