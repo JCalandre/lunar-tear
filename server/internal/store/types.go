@@ -120,6 +120,14 @@ type UserState struct {
 	AutoSaleSettings            map[int32]AutoSaleSettingState
 	CharacterRebirths           map[int32]CharacterRebirthState
 	QuestAutoOrbit              QuestAutoOrbitState
+
+	Friends                map[int64]FriendEdge
+	IncomingFriendRequests map[int64]FriendRequest
+	OutgoingFriendRequests map[int64]FriendRequest
+	Pvp                    PvpState
+	PvpAttackLog           []BattleLogEntry
+	PvpDefenseLog          []BattleLogEntry
+	PvpMatching            []MatchingEntry
 }
 
 func (u *UserState) EnsureMaps() {
@@ -308,6 +316,15 @@ func (u *UserState) EnsureMaps() {
 	}
 	if u.Gacha.BannerStates == nil {
 		u.Gacha.BannerStates = make(map[int32]GachaBannerState)
+	}
+	if u.Friends == nil {
+		u.Friends = make(map[int64]FriendEdge)
+	}
+	if u.IncomingFriendRequests == nil {
+		u.IncomingFriendRequests = make(map[int64]FriendRequest)
+	}
+	if u.OutgoingFriendRequests == nil {
+		u.OutgoingFriendRequests = make(map[int64]FriendRequest)
 	}
 }
 

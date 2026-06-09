@@ -86,6 +86,12 @@ func CloneUserState(u UserState) UserState {
 	out.AutoSaleSettings = maps.Clone(u.AutoSaleSettings)
 	out.CharacterRebirths = maps.Clone(u.CharacterRebirths)
 	out.QuestAutoOrbit.AccumulatedDrops = append([]AutoOrbitDropEntry(nil), u.QuestAutoOrbit.AccumulatedDrops...)
+	out.Friends = maps.Clone(u.Friends)
+	out.IncomingFriendRequests = maps.Clone(u.IncomingFriendRequests)
+	out.OutgoingFriendRequests = maps.Clone(u.OutgoingFriendRequests)
+	out.PvpAttackLog = append([]BattleLogEntry(nil), u.PvpAttackLog...)
+	out.PvpDefenseLog = append([]BattleLogEntry(nil), u.PvpDefenseLog...)
+	out.PvpMatching = append([]MatchingEntry(nil), u.PvpMatching...)
 	return out
 }
 
