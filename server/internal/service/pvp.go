@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log"
 
 	pb "lunar-tear/server/gen/proto"
 	"lunar-tear/server/internal/gametime"
@@ -107,4 +108,106 @@ func (s *PvpServiceServer) UpdateMatchingList(ctx context.Context, _ *emptypb.Em
 		u.PvpMatching = s.buildMatching(u)
 	})
 	return &pb.UpdateMatchingListResponse{Matching: matchingToProto(after.PvpMatching)}, nil
+}
+
+func (s *PvpServiceServer) StartBattle(ctx context.Context, req *pb.StartBattleRequest) (*pb.StartBattleResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	user, _ := s.users.LoadUser(userId)
+	var card PlayerCard
+	found := false
+	for _, e := range user.PvpMatching {
+		if e.PlayerId == req.OpponentPlayerId {
+			card = PlayerCard{PlayerId: e.PlayerId, Name: e.Name, PvpPoint: e.PvpPoint,
+				MaxDeckPower: e.DeckPower, FavoriteCostumeId: e.MostPowerfulCostumeId, IsBot: e.IsBot}
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Opponent no longer cached: degrade to a fresh bot rather than erroring the screen.
+		card = synthBot(s.dir.pools(), user.PlayerId, 0, gametime.NowMillis(), user.Pvp.PvpPoint)
+	}
+	return &pb.StartBattleResponse{OpponentDeckCharacter: s.dir.DefenseDeckOf(card)}, nil
+}
+
+const maxLogEntries = 30
+
+func capLog(entries []store.BattleLogEntry) []store.BattleLogEntry {
+	if len(entries) <= maxLogEntries {
+		return entries
+	}
+	return entries[len(entries)-maxLogEntries:]
+}
+
+func (s *PvpServiceServer) FinishBattle(ctx context.Context, req *pb.FinishBattleRequest) (*pb.FinishBattleResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	now := gametime.NowMillis()
+
+	self, _ := s.users.LoadUser(userId)
+	beforePoint := self.Pvp.PvpPoint
+	beforeRank, _ := s.snaps.RankOfPlayer(self.PlayerId)
+
+	var opp store.MatchingEntry
+	for _, e := range self.PvpMatching {
+		if e.PlayerId == req.OpponentPlayerId {
+			opp = e
+			break
+		}
+	}
+	delta := pointDelta(beforePoint, opp.PvpPoint, req.IsVictory)
+
+	after, _ := s.users.UpdateUser(userId, func(u *store.UserState) {
+		u.Pvp.PvpPoint = applyPointDelta(u.Pvp.PvpPoint, delta)
+		if req.IsVictory {
+			u.Pvp.AttackWinCount++
+		} else {
+			u.Pvp.AttackLoseCount++
+		}
+		u.Pvp.LastFinishDay = gametime.StartOfDayMillis()
+		entry := store.BattleLogEntry{
+			Seq: now, OpponentPlayerId: opp.PlayerId, OpponentName: opp.Name,
+			OpponentPvpPoint: opp.PvpPoint, OpponentDeckPower: opp.DeckPower,
+			IsVictory: req.IsVictory, BattleDatetime: now, FluctuatedPoint: delta, Rank: int32(beforeRank),
+		}
+		u.PvpAttackLog = capLog(append(u.PvpAttackLog, entry))
+	})
+
+	if err := RefreshSnapshot(s.snaps, &after); err != nil {
+		log.Printf("[PvpService] FinishBattle snapshot refresh failed: %v", err)
+	}
+
+	if !s.dir.IsBot(opp.PlayerId) && opp.PlayerId != 0 {
+		if oid, err := s.userIdForPlayer(opp.PlayerId); err == nil {
+			s.users.UpdateUser(oid, func(u *store.UserState) {
+				defWin := !req.IsVictory
+				if defWin {
+					u.Pvp.DefenseWinCount++
+				} else {
+					u.Pvp.DefenseLoseCount++
+				}
+				entry := store.BattleLogEntry{
+					Seq: now, OpponentPlayerId: self.PlayerId, OpponentName: self.Profile.Name,
+					OpponentPvpPoint: beforePoint, IsVictory: defWin, BattleDatetime: now,
+				}
+				u.PvpDefenseLog = capLog(append(u.PvpDefenseLog, entry))
+			})
+		}
+	}
+
+	afterRank, _ := s.snaps.RankOfPlayer(self.PlayerId)
+	if afterRank == 0 {
+		afterRank = 1
+	}
+	return &pb.FinishBattleResponse{
+		BeforePvpPoint: beforePoint, BeforeRank: int32(beforeRank),
+		AfterPvpPoint: after.Pvp.PvpPoint, AfterRank: int32(afterRank),
+	}, nil
+}
+
+// userIdForPlayer maps a real playerId to userId (player_id == user_id), validating existence.
+func (s *PvpServiceServer) userIdForPlayer(playerId int64) (int64, error) {
+	if _, err := s.users.LoadUser(playerId); err != nil {
+		return 0, err
+	}
+	return playerId, nil
 }
