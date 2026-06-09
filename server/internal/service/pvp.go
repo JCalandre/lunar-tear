@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"sort"
 
 	pb "lunar-tear/server/gen/proto"
 	"lunar-tear/server/internal/gametime"
@@ -210,4 +211,67 @@ func (s *PvpServiceServer) userIdForPlayer(playerId int64) (int64, error) {
 		return 0, err
 	}
 	return playerId, nil
+}
+
+func (s *PvpServiceServer) GetRanking(ctx context.Context, req *pb.GetRankingRequest) (*pb.GetRankingResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	user, _ := s.users.LoadUser(userId)
+	const pageSize = 50
+	offset := int(req.RankFrom)
+	if offset < 0 {
+		offset = 0
+	}
+	snaps, _ := s.snaps.ListSnapshotsByPointDesc(offset, pageSize)
+	var rows []*pb.RankingUser
+	for i, sn := range snaps {
+		rows = append(rows, &pb.RankingUser{
+			Rank: int32(offset + i + 1), PlayerId: sn.PlayerId, Name: sn.UserName,
+			PvpPoint: sn.PvpPoint, DeckPower: sn.MaxDeckPower, FavoriteCostumeId: sn.FavoriteCostumeId,
+		})
+	}
+	count, _ := s.snaps.CountSnapshots()
+	myRank, _ := s.snaps.RankOfPlayer(user.PlayerId)
+	return &pb.GetRankingResponse{
+		RankingUser: rows, UserCount: int32(count), RankingPosition: int32(myRank),
+	}, nil
+}
+
+func (s *PvpServiceServer) GetSeasonResult(ctx context.Context, _ *emptypb.Empty) (*pb.GetSeasonResultResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	user, _ := s.users.LoadUser(userId)
+	p := user.Pvp
+	var defRate int32
+	if total := p.DefenseWinCount + p.DefenseLoseCount; total > 0 {
+		defRate = (p.DefenseWinCount * 1000) / total
+	}
+	return &pb.GetSeasonResultResponse{
+		AttackWinCount: p.AttackWinCount, AttackLoseCount: p.AttackLoseCount,
+		AttackPvpPoint: p.PvpPoint, DefenseWinRatePermil: defRate, DefensePvpPoint: p.PvpPoint,
+	}, nil
+}
+
+func logToProto(entries []store.BattleLogEntry) []*pb.BattleLog {
+	sorted := append([]store.BattleLogEntry(nil), entries...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Seq > sorted[j].Seq })
+	var out []*pb.BattleLog
+	for _, e := range sorted {
+		out = append(out, &pb.BattleLog{
+			PlayerId: e.OpponentPlayerId, Name: e.OpponentName, PvpPoint: e.OpponentPvpPoint,
+			DeckPower: e.OpponentDeckPower, IsVictory: e.IsVictory, FluctuatedPvpPoint: e.FluctuatedPoint,
+			Rank: e.Rank,
+		})
+	}
+	return out
+}
+
+func (s *PvpServiceServer) GetAttackLogList(ctx context.Context, _ *emptypb.Empty) (*pb.GetAttackLogListResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	user, _ := s.users.LoadUser(userId)
+	return &pb.GetAttackLogListResponse{AttackLog: logToProto(user.PvpAttackLog)}, nil
+}
+
+func (s *PvpServiceServer) GetDefenseLogList(ctx context.Context, _ *emptypb.Empty) (*pb.GetDefenseLogListResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	user, _ := s.users.LoadUser(userId)
+	return &pb.GetDefenseLogListResponse{DefenseLog: logToProto(user.PvpDefenseLog)}, nil
 }
