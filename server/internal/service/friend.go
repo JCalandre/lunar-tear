@@ -232,7 +232,10 @@ func (s *FriendServiceServer) maxStaminaMillisFor(u *store.UserState) int32 {
 
 func (s *FriendServiceServer) CheerFriend(ctx context.Context, req *pb.CheerFriendRequest) (*pb.CheerFriendResponse, error) {
 	userId := CurrentUserId(ctx, s.users, s.sessions)
-	self, _ := s.users.LoadUser(userId)
+	self, err := s.users.LoadUser(userId)
+	if err != nil {
+		return &pb.CheerFriendResponse{}, nil
+	}
 	target := req.PlayerId
 	s.users.UpdateUser(userId, func(u *store.UserState) {
 		maybeResetCheerDay(u)
@@ -257,7 +260,10 @@ func (s *FriendServiceServer) CheerFriend(ctx context.Context, req *pb.CheerFrie
 
 func (s *FriendServiceServer) BulkCheerFriend(ctx context.Context, _ *emptypb.Empty) (*pb.BulkCheerFriendResponse, error) {
 	userId := CurrentUserId(ctx, s.users, s.sessions)
-	self, _ := s.users.LoadUser(userId)
+	self, err := s.users.LoadUser(userId)
+	if err != nil {
+		return &pb.BulkCheerFriendResponse{}, nil
+	}
 	var cheered []int64
 	s.users.UpdateUser(userId, func(u *store.UserState) {
 		maybeResetCheerDay(u)
