@@ -14,10 +14,11 @@ type DeckServiceServer struct {
 	pb.UnimplementedDeckServiceServer
 	users    store.UserRepository
 	sessions store.SessionRepository
+	snaps    store.SnapshotRepository
 }
 
-func NewDeckServiceServer(users store.UserRepository, sessions store.SessionRepository) *DeckServiceServer {
-	return &DeckServiceServer{users: users, sessions: sessions}
+func NewDeckServiceServer(users store.UserRepository, sessions store.SessionRepository, snaps store.SnapshotRepository) *DeckServiceServer {
+	return &DeckServiceServer{users: users, sessions: sessions, snaps: snaps}
 }
 
 func (s *DeckServiceServer) UpdateName(ctx context.Context, req *pb.UpdateNameRequest) (*pb.UpdateNameResponse, error) {
@@ -159,12 +160,17 @@ func (s *DeckServiceServer) ReplaceDeck(ctx context.Context, req *pb.ReplaceDeck
 	}
 	userId := CurrentUserId(ctx, s.users, s.sessions)
 
-	s.users.UpdateUser(userId, func(user *store.UserState) {
+	after, _ := s.users.UpdateUser(userId, func(user *store.UserState) {
 		if req.Deck == nil {
 			return
 		}
 		store.ApplyDeckReplacement(user, model.DeckType(req.DeckType), req.UserDeckNumber, deckSlotsFromProto(req.Deck), gametime.NowMillis())
 	})
+	if s.snaps != nil && model.DeckType(req.DeckType) == model.DeckTypePvp {
+		if err := RefreshSnapshot(s.snaps, &after); err != nil {
+			log.Printf("[DeckService] ReplaceDeck snapshot refresh failed: %v", err)
+		}
+	}
 
 	return &pb.ReplaceDeckResponse{}, nil
 }

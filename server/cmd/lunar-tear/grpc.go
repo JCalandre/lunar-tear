@@ -37,6 +37,7 @@ func startGRPC(
 	userStore interface {
 		store.UserRepository
 		store.SessionRepository
+		store.SnapshotRepository
 	},
 	holder *runtime.Holder,
 	noRegister bool,
@@ -80,6 +81,7 @@ func registerServices(
 	userStore interface {
 		store.UserRepository
 		store.SessionRepository
+		store.SnapshotRepository
 	},
 	holder *runtime.Holder,
 	noRegister bool,
@@ -88,7 +90,7 @@ func registerServices(
 	pubPort, _ := strconv.Atoi(pubPortStr)
 
 	pb.RegisterBannerServiceServer(srv, service.NewBannerServiceServer(holder))
-	pb.RegisterUserServiceServer(srv, service.NewUserServiceServer(userStore, userStore, holder, authURL, noRegister))
+	pb.RegisterUserServiceServer(srv, service.NewUserServiceServer(userStore, userStore, holder, authURL, noRegister, userStore))
 	pb.RegisterBattleServiceServer(srv, service.NewBattleServiceServer(userStore, userStore))
 	pb.RegisterConfigServiceServer(srv, service.NewConfigServiceServer(pubHost, int32(pubPort), octoURL))
 	pb.RegisterDataServiceServer(srv, service.NewDataServiceServer(userStore, userStore))
@@ -100,7 +102,7 @@ func registerServices(
 	pb.RegisterQuestServiceServer(srv, service.NewQuestServiceServer(userStore, userStore, holder))
 	pb.RegisterNotificationServiceServer(srv, service.NewNotificationServiceServer(userStore, userStore))
 	pb.RegisterCageOrnamentServiceServer(srv, service.NewCageOrnamentServiceServer(userStore, userStore, holder))
-	pb.RegisterDeckServiceServer(srv, service.NewDeckServiceServer(userStore, userStore))
+	pb.RegisterDeckServiceServer(srv, service.NewDeckServiceServer(userStore, userStore, userStore))
 	pb.RegisterFriendServiceServer(srv, service.NewFriendServiceServer(userStore, userStore))
 	pb.RegisterLoginBonusServiceServer(srv, service.NewLoginBonusServiceServer(userStore, userStore, holder))
 	pb.RegisterNaviCutInServiceServer(srv, service.NewNaviCutInServiceServer(userStore, userStore))

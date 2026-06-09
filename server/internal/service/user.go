@@ -30,13 +30,14 @@ type UserServiceServer struct {
 	holder     *runtime.Holder
 	authURL    string
 	noRegister bool
+	snaps      store.SnapshotRepository
 }
 
-func NewUserServiceServer(users store.UserRepository, sessions store.SessionRepository, holder *runtime.Holder, authURL string, noRegister bool) *UserServiceServer {
+func NewUserServiceServer(users store.UserRepository, sessions store.SessionRepository, holder *runtime.Holder, authURL string, noRegister bool, snaps store.SnapshotRepository) *UserServiceServer {
 	if authURL != "" && !strings.Contains(authURL, "://") {
 		authURL = "http://" + authURL
 	}
-	return &UserServiceServer{users: users, sessions: sessions, holder: holder, authURL: authURL, noRegister: noRegister}
+	return &UserServiceServer{users: users, sessions: sessions, holder: holder, authURL: authURL, noRegister: noRegister, snaps: snaps}
 }
 
 func (s *UserServiceServer) RegisterUser(ctx context.Context, req *pb.RegisterUserRequest) (*pb.RegisterUserResponse, error) {
@@ -94,9 +95,14 @@ func (s *UserServiceServer) GameStart(ctx context.Context, _ *emptypb.Empty) (*p
 	}
 
 	userId := CurrentUserId(ctx, s.users, s.sessions)
-	s.users.UpdateUser(userId, func(user *store.UserState) {
+	after, _ := s.users.UpdateUser(userId, func(user *store.UserState) {
 		user.GameStartDatetime = gametime.NowMillis()
 	})
+	if s.snaps != nil {
+		if err := RefreshSnapshot(s.snaps, &after); err != nil {
+			log.Printf("[UserService] GameStart snapshot refresh failed: %v", err)
+		}
+	}
 
 	return &pb.GameStartResponse{}, nil
 }
