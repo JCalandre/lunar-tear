@@ -105,6 +105,9 @@ func initMaps(u *store.UserState) {
 	u.Gimmick.OrnamentProgress = make(map[store.GimmickOrnamentKey]store.GimmickOrnamentProgressState)
 	u.Gimmick.Sequences = make(map[store.GimmickSequenceKey]store.GimmickSequenceState)
 	u.Gimmick.Unlocks = make(map[store.GimmickKey]store.GimmickUnlockState)
+	u.Friends = make(map[int64]store.FriendEdge)
+	u.IncomingFriendRequests = make(map[int64]store.FriendRequest)
+	u.OutgoingFriendRequests = make(map[int64]store.FriendRequest)
 }
 
 func load1to1(db *sql.DB, uid int64, u *store.UserState) {
@@ -780,6 +783,55 @@ func loadMapTables(db *sql.DB, uid int64, u *store.UserState) {
 		rows.Scan(&ver, &ir, &lv)
 		u.BigHuntWeeklyStatuses[ver] = store.BigHuntWeeklyStatus{IsReceivedWeeklyReward: ir != 0, LatestVersion: lv}
 	})
+
+	queryRows(db, `SELECT friend_player_id, became_friends_at, cheer_sent_today, cheer_received_pending,
+		stamina_received_today, last_reset_day, latest_version FROM user_friends WHERE user_id=?`, uid,
+		func(rows *sql.Rows) {
+			var v store.FriendEdge
+			var cs, cr, sr int
+			rows.Scan(&v.PlayerId, &v.BecameFriendsAt, &cs, &cr, &sr, &v.LastResetDay, &v.LatestVersion)
+			v.CheerSentToday = cs != 0
+			v.CheerReceivedPending = cr != 0
+			v.StaminaReceivedToday = sr != 0
+			u.Friends[v.PlayerId] = v
+		})
+
+	queryRows(db, `SELECT from_player_id, requested_at, latest_version FROM user_friend_requests_incoming WHERE user_id=?`, uid,
+		func(rows *sql.Rows) {
+			var v store.FriendRequest
+			rows.Scan(&v.PlayerId, &v.RequestedAt, &v.LatestVersion)
+			u.IncomingFriendRequests[v.PlayerId] = v
+		})
+
+	queryRows(db, `SELECT to_player_id, requested_at, latest_version FROM user_friend_requests_outgoing WHERE user_id=?`, uid,
+		func(rows *sql.Rows) {
+			var v store.FriendRequest
+			rows.Scan(&v.PlayerId, &v.RequestedAt, &v.LatestVersion)
+			u.OutgoingFriendRequests[v.PlayerId] = v
+		})
+
+	queryRows(db, `SELECT pvp_point, attack_win_count, attack_lose_count, defense_win_count,
+		defense_lose_count, last_finish_day, latest_version FROM user_pvp_state WHERE user_id=?`, uid,
+		func(rows *sql.Rows) {
+			rows.Scan(&u.Pvp.PvpPoint, &u.Pvp.AttackWinCount, &u.Pvp.AttackLoseCount,
+				&u.Pvp.DefenseWinCount, &u.Pvp.DefenseLoseCount, &u.Pvp.LastFinishDay, &u.Pvp.LatestVersion)
+		})
+
+	queryRows(db, `SELECT is_defense, seq, opponent_player_id, opponent_name, opponent_pvp_point,
+		opponent_deck_power, is_victory, battle_datetime, fluctuated_point, rank
+		FROM user_pvp_logs WHERE user_id=? ORDER BY seq ASC`, uid,
+		func(rows *sql.Rows) {
+			var e store.BattleLogEntry
+			var isDef, win int
+			rows.Scan(&isDef, &e.Seq, &e.OpponentPlayerId, &e.OpponentName, &e.OpponentPvpPoint,
+				&e.OpponentDeckPower, &win, &e.BattleDatetime, &e.FluctuatedPoint, &e.Rank)
+			e.IsVictory = win != 0
+			if isDef != 0 {
+				u.PvpDefenseLog = append(u.PvpDefenseLog, e)
+			} else {
+				u.PvpAttackLog = append(u.PvpAttackLog, e)
+			}
+		})
 }
 
 func queryRows(db *sql.DB, query string, uid int64, scan func(*sql.Rows)) {

@@ -552,6 +552,49 @@ func writeUserState(tx *sql.Tx, uid int64, u *store.UserState) error {
 		}
 	}
 
+	for _, v := range u.Friends {
+		if err := exec(`INSERT INTO user_friends (user_id, friend_player_id, became_friends_at, cheer_sent_today,
+			cheer_received_pending, stamina_received_today, last_reset_day, latest_version) VALUES (?,?,?,?,?,?,?,?)`,
+			uid, v.PlayerId, v.BecameFriendsAt, boolToInt(v.CheerSentToday), boolToInt(v.CheerReceivedPending),
+			boolToInt(v.StaminaReceivedToday), v.LastResetDay, v.LatestVersion); err != nil {
+			return err
+		}
+	}
+	for _, v := range u.IncomingFriendRequests {
+		if err := exec(`INSERT INTO user_friend_requests_incoming (user_id, from_player_id, requested_at, latest_version)
+			VALUES (?,?,?,?)`, uid, v.PlayerId, v.RequestedAt, v.LatestVersion); err != nil {
+			return err
+		}
+	}
+	for _, v := range u.OutgoingFriendRequests {
+		if err := exec(`INSERT INTO user_friend_requests_outgoing (user_id, to_player_id, requested_at, latest_version)
+			VALUES (?,?,?,?)`, uid, v.PlayerId, v.RequestedAt, v.LatestVersion); err != nil {
+			return err
+		}
+	}
+	if err := exec(`INSERT INTO user_pvp_state (user_id, pvp_point, attack_win_count, attack_lose_count,
+		defense_win_count, defense_lose_count, last_finish_day, latest_version) VALUES (?,?,?,?,?,?,?,?)`,
+		uid, u.Pvp.PvpPoint, u.Pvp.AttackWinCount, u.Pvp.AttackLoseCount, u.Pvp.DefenseWinCount,
+		u.Pvp.DefenseLoseCount, u.Pvp.LastFinishDay, u.Pvp.LatestVersion); err != nil {
+		return err
+	}
+	for _, e := range u.PvpAttackLog {
+		if err := exec(`INSERT INTO user_pvp_logs (user_id, is_defense, seq, opponent_player_id, opponent_name,
+			opponent_pvp_point, opponent_deck_power, is_victory, battle_datetime, fluctuated_point, rank)
+			VALUES (?,0,?,?,?,?,?,?,?,?,?)`, uid, e.Seq, e.OpponentPlayerId, e.OpponentName, e.OpponentPvpPoint,
+			e.OpponentDeckPower, boolToInt(e.IsVictory), e.BattleDatetime, e.FluctuatedPoint, e.Rank); err != nil {
+			return err
+		}
+	}
+	for _, e := range u.PvpDefenseLog {
+		if err := exec(`INSERT INTO user_pvp_logs (user_id, is_defense, seq, opponent_player_id, opponent_name,
+			opponent_pvp_point, opponent_deck_power, is_victory, battle_datetime, fluctuated_point, rank)
+			VALUES (?,1,?,?,?,?,?,?,?,?,?)`, uid, e.Seq, e.OpponentPlayerId, e.OpponentName, e.OpponentPvpPoint,
+			e.OpponentDeckPower, boolToInt(e.IsVictory), e.BattleDatetime, e.FluctuatedPoint, e.Rank); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1148,7 +1191,76 @@ func diffAndSave(tx *sql.Tx, uid int64, before, after *store.UserState) error {
 		}
 	}
 
+	for k, v := range after.Friends {
+		if old, ok := before.Friends[k]; !ok || old != v {
+			exec(`INSERT OR REPLACE INTO user_friends (user_id, friend_player_id, became_friends_at, cheer_sent_today,
+				cheer_received_pending, stamina_received_today, last_reset_day, latest_version) VALUES (?,?,?,?,?,?,?,?)`,
+				uid, v.PlayerId, v.BecameFriendsAt, boolToInt(v.CheerSentToday), boolToInt(v.CheerReceivedPending),
+				boolToInt(v.StaminaReceivedToday), v.LastResetDay, v.LatestVersion)
+		}
+	}
+	for k := range before.Friends {
+		if _, ok := after.Friends[k]; !ok {
+			exec(`DELETE FROM user_friends WHERE user_id=? AND friend_player_id=?`, uid, k)
+		}
+	}
+	for k, v := range after.IncomingFriendRequests {
+		if old, ok := before.IncomingFriendRequests[k]; !ok || old != v {
+			exec(`INSERT OR REPLACE INTO user_friend_requests_incoming (user_id, from_player_id, requested_at, latest_version)
+				VALUES (?,?,?,?)`, uid, v.PlayerId, v.RequestedAt, v.LatestVersion)
+		}
+	}
+	for k := range before.IncomingFriendRequests {
+		if _, ok := after.IncomingFriendRequests[k]; !ok {
+			exec(`DELETE FROM user_friend_requests_incoming WHERE user_id=? AND from_player_id=?`, uid, k)
+		}
+	}
+	for k, v := range after.OutgoingFriendRequests {
+		if old, ok := before.OutgoingFriendRequests[k]; !ok || old != v {
+			exec(`INSERT OR REPLACE INTO user_friend_requests_outgoing (user_id, to_player_id, requested_at, latest_version)
+				VALUES (?,?,?,?)`, uid, v.PlayerId, v.RequestedAt, v.LatestVersion)
+		}
+	}
+	for k := range before.OutgoingFriendRequests {
+		if _, ok := after.OutgoingFriendRequests[k]; !ok {
+			exec(`DELETE FROM user_friend_requests_outgoing WHERE user_id=? AND to_player_id=?`, uid, k)
+		}
+	}
+	if before.Pvp != after.Pvp {
+		exec(`INSERT OR REPLACE INTO user_pvp_state (user_id, pvp_point, attack_win_count, attack_lose_count,
+			defense_win_count, defense_lose_count, last_finish_day, latest_version) VALUES (?,?,?,?,?,?,?,?)`,
+			uid, after.Pvp.PvpPoint, after.Pvp.AttackWinCount, after.Pvp.AttackLoseCount, after.Pvp.DefenseWinCount,
+			after.Pvp.DefenseLoseCount, after.Pvp.LastFinishDay, after.Pvp.LatestVersion)
+	}
+	if !pvpLogsEqual(before.PvpAttackLog, after.PvpAttackLog) || !pvpLogsEqual(before.PvpDefenseLog, after.PvpDefenseLog) {
+		exec(`DELETE FROM user_pvp_logs WHERE user_id=?`, uid)
+		for _, e := range after.PvpAttackLog {
+			exec(`INSERT INTO user_pvp_logs (user_id, is_defense, seq, opponent_player_id, opponent_name,
+				opponent_pvp_point, opponent_deck_power, is_victory, battle_datetime, fluctuated_point, rank)
+				VALUES (?,0,?,?,?,?,?,?,?,?,?)`, uid, e.Seq, e.OpponentPlayerId, e.OpponentName, e.OpponentPvpPoint,
+				e.OpponentDeckPower, boolToInt(e.IsVictory), e.BattleDatetime, e.FluctuatedPoint, e.Rank)
+		}
+		for _, e := range after.PvpDefenseLog {
+			exec(`INSERT INTO user_pvp_logs (user_id, is_defense, seq, opponent_player_id, opponent_name,
+				opponent_pvp_point, opponent_deck_power, is_victory, battle_datetime, fluctuated_point, rank)
+				VALUES (?,1,?,?,?,?,?,?,?,?,?)`, uid, e.Seq, e.OpponentPlayerId, e.OpponentName, e.OpponentPvpPoint,
+				e.OpponentDeckPower, boolToInt(e.IsVictory), e.BattleDatetime, e.FluctuatedPoint, e.Rank)
+		}
+	}
+
 	return nil
+}
+
+func pvpLogsEqual(a, b []store.BattleLogEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func bigHuntBattleDetailEqual(a, b store.BigHuntBattleDetail) bool {
