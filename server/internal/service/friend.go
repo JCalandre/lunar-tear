@@ -101,6 +101,9 @@ func (s *FriendServiceServer) SearchRecommendedUsers(ctx context.Context, req *e
 		filtered = append(filtered, c)
 	}
 	filtered = s.dir.FillWithBots(filtered, 10, user.PlayerId, dayBucket(), user.Pvp.PvpPoint)
+	if len(filtered) > 10 {
+		filtered = filtered[:10]
+	}
 	var out []*pb.User
 	for _, c := range filtered {
 		out = append(out, userProto(c))
