@@ -104,6 +104,7 @@ func registerServices(
 	pb.RegisterCageOrnamentServiceServer(srv, service.NewCageOrnamentServiceServer(userStore, userStore, holder))
 	pb.RegisterDeckServiceServer(srv, service.NewDeckServiceServer(userStore, userStore, userStore))
 	directory := service.NewPlayerDirectory(userStore, holder)
+	service.BackfillSnapshots(userStore, userStore)
 	pb.RegisterFriendServiceServer(srv, service.NewFriendServiceServer(userStore, userStore, directory, holder))
 	pb.RegisterPvpServiceServer(srv, service.NewPvpServiceServer(userStore, userStore, userStore, directory, holder))
 	pb.RegisterLoginBonusServiceServer(srv, service.NewLoginBonusServiceServer(userStore, userStore, holder))

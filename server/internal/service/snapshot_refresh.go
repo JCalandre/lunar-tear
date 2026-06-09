@@ -9,7 +9,12 @@ import (
 
 // RefreshSnapshot writes the user's public face to the snapshot table.
 // Best-effort: returns an error for logging but must not fail the caller's RPC.
+// Accounts without a display name (onboarding not completed) are skipped so they
+// don't appear as blank rows in other players' friend/arena lists.
 func RefreshSnapshot(snaps store.SnapshotRepository, user *store.UserState) error {
+	if user.Profile.Name == "" {
+		return nil
+	}
 	dt, dn := PickDefenseDeck(user)
 	deck := BuildPvpDeckCharacters(user, dt, dn)
 	deckJSON, err := json.Marshal(deck)

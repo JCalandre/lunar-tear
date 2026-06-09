@@ -24,4 +24,6 @@ type SnapshotRepository interface {
 	ListSnapshotsByPointDesc(offset, limit int) ([]PlayerSnapshot, error)
 	CountSnapshots() (int, error)
 	RankOfPlayer(playerId int64) (int, error) // 1-based rank by pvp_point desc; 0 if absent
+	// AllUserIds lists every account id, for backfilling snapshots on startup.
+	AllUserIds() ([]int64, error)
 }

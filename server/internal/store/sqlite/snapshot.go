@@ -87,4 +87,21 @@ func (s *SQLiteStore) RankOfPlayer(playerId int64) (int, error) {
 	return ahead + 1, nil
 }
 
+func (s *SQLiteStore) AllUserIds() ([]int64, error) {
+	rows, err := s.db.Query(`SELECT user_id FROM users ORDER BY user_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 var _ store.SnapshotRepository = (*SQLiteStore)(nil)
