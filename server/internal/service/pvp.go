@@ -4,6 +4,7 @@ import (
 	"context"
 
 	pb "lunar-tear/server/gen/proto"
+	"lunar-tear/server/internal/gametime"
 	"lunar-tear/server/internal/runtime"
 	"lunar-tear/server/internal/store"
 
@@ -61,4 +62,49 @@ func applyPointDelta(cur, delta int32) int32 {
 		return 0
 	}
 	return v
+}
+
+const matchingCount = 5
+
+func (s *PvpServiceServer) buildMatching(user *store.UserState) []store.MatchingEntry {
+	cards := s.dir.RealPlayersNear(user.PlayerId, user.Pvp.PvpPoint, matchingCount)
+	cards = s.dir.FillWithBots(cards, matchingCount, user.PlayerId, gametime.NowMillis(), user.Pvp.PvpPoint)
+	out := make([]store.MatchingEntry, 0, len(cards))
+	for _, c := range cards {
+		rank, _ := s.snaps.RankOfPlayer(c.PlayerId)
+		out = append(out, store.MatchingEntry{
+			PlayerId: c.PlayerId, Name: c.Name, PvpPoint: c.PvpPoint, Rank: int32(rank),
+			DeckPower: c.MaxDeckPower, IsBot: c.IsBot, MostPowerfulCostumeId: c.FavoriteCostumeId,
+		})
+	}
+	return out
+}
+
+func matchingToProto(entries []store.MatchingEntry) []*pb.MatchingOpponent {
+	var out []*pb.MatchingOpponent
+	for _, e := range entries {
+		out = append(out, &pb.MatchingOpponent{
+			PlayerId: e.PlayerId, Name: e.Name, PvpPoint: e.PvpPoint, Rank: e.Rank,
+			DeckPower: e.DeckPower, MostPowerfulCostumeId: e.MostPowerfulCostumeId,
+		})
+	}
+	return out
+}
+
+func (s *PvpServiceServer) GetMatchingList(ctx context.Context, _ *emptypb.Empty) (*pb.GetMatchingListResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	after, _ := s.users.UpdateUser(userId, func(u *store.UserState) {
+		if len(u.PvpMatching) == 0 {
+			u.PvpMatching = s.buildMatching(u)
+		}
+	})
+	return &pb.GetMatchingListResponse{Matching: matchingToProto(after.PvpMatching)}, nil
+}
+
+func (s *PvpServiceServer) UpdateMatchingList(ctx context.Context, _ *emptypb.Empty) (*pb.UpdateMatchingListResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	after, _ := s.users.UpdateUser(userId, func(u *store.UserState) {
+		u.PvpMatching = s.buildMatching(u)
+	})
+	return &pb.UpdateMatchingListResponse{Matching: matchingToProto(after.PvpMatching)}, nil
 }
