@@ -195,7 +195,7 @@ func (s *UserServiceServer) GetUserProfile(ctx context.Context, req *pb.GetUserP
 		Message:           user.Profile.Message,
 		IsFriend:          false,
 		LatestUsedDeck: &pb.ProfileDeck{
-			Power:         100,
+			Power:         maxDeckPower(&user),
 			DeckCharacter: deckCharacters,
 		},
 		PvpInfo: &pb.ProfilePvpInfo{},
