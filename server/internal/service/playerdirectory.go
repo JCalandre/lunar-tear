@@ -16,6 +16,7 @@ type PlayerCard struct {
 	MaxDeckPower      int32
 	FavoriteCostumeId int32
 	PvpPoint          int32
+	LastLoginDatetime int64 // millis; 0 for bots (proto mapper substitutes now)
 	IsBot             bool
 }
 
@@ -54,6 +55,7 @@ func cardFromSnapshot(s store.PlayerSnapshot) PlayerCard {
 		MaxDeckPower:      s.MaxDeckPower,
 		FavoriteCostumeId: s.FavoriteCostumeId,
 		PvpPoint:          s.PvpPoint,
+		LastLoginDatetime: s.LastLoginDatetime,
 		IsBot:             false,
 	}
 }

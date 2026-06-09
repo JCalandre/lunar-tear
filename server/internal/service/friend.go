@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log"
 
 	pb "lunar-tear/server/gen/proto"
 	"lunar-tear/server/internal/gametime"
@@ -110,6 +111,13 @@ func (s *FriendServiceServer) SearchRecommendedUsers(ctx context.Context, req *e
 	var out []*pb.User
 	for _, c := range filtered {
 		out = append(out, userProto(c))
+	}
+	if len(out) > 0 {
+		f := out[0]
+		log.Printf("[FriendService] SearchRecommendedUsers: returning %d users (real=%d) first: id=%d name=%q level=%d power=%d costume=%d login=%v",
+			len(out), len(cards), f.PlayerId, f.UserName, f.Level, f.MaxDeckPower, f.FavoriteCostumeId, f.LastLoginDatetime != nil)
+	} else {
+		log.Printf("[FriendService] SearchRecommendedUsers: returning 0 users (real=%d)", len(cards))
 	}
 	return &pb.SearchRecommendedUsersResponse{Users: out}, nil
 }

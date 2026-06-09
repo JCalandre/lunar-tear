@@ -8,10 +8,20 @@ import (
 
 func dayBucket() int64 { return gametime.StartOfDayMillis() }
 
+// lastLoginOrNow returns a non-nil display timestamp. The client renders these list rows
+// and a nil lastLoginDatetime aborts list population client-side, so bots (millis 0) get now.
+func lastLoginOrNow(millis int64) int64 {
+	if millis <= 0 {
+		return gametime.NowMillis()
+	}
+	return millis
+}
+
 func userProto(c PlayerCard) *pb.User {
 	return &pb.User{
 		PlayerId:          c.PlayerId,
 		UserName:          c.Name,
+		LastLoginDatetime: safeTimestamp(lastLoginOrNow(c.LastLoginDatetime)),
 		MaxDeckPower:      c.MaxDeckPower,
 		FavoriteCostumeId: c.FavoriteCostumeId,
 		Level:             c.Level,
@@ -22,6 +32,7 @@ func friendUserProto(c PlayerCard, e store.FriendEdge) *pb.FriendUser {
 	return &pb.FriendUser{
 		PlayerId:          c.PlayerId,
 		UserName:          c.Name,
+		LastLoginDatetime: safeTimestamp(lastLoginOrNow(c.LastLoginDatetime)),
 		MaxDeckPower:      c.MaxDeckPower,
 		FavoriteCostumeId: c.FavoriteCostumeId,
 		Level:             c.Level,
