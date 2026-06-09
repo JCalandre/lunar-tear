@@ -114,18 +114,9 @@ func (s *PvpServiceServer) UpdateMatchingList(ctx context.Context, _ *emptypb.Em
 func (s *PvpServiceServer) StartBattle(ctx context.Context, req *pb.StartBattleRequest) (*pb.StartBattleResponse, error) {
 	userId := CurrentUserId(ctx, s.users, s.sessions)
 	user, _ := s.users.LoadUser(userId)
-	var card PlayerCard
-	found := false
-	for _, e := range user.PvpMatching {
-		if e.PlayerId == req.OpponentPlayerId {
-			card = PlayerCard{PlayerId: e.PlayerId, Name: e.Name, PvpPoint: e.PvpPoint,
-				MaxDeckPower: e.DeckPower, FavoriteCostumeId: e.MostPowerfulCostumeId, IsBot: e.IsBot}
-			found = true
-			break
-		}
-	}
-	if !found {
-		// Opponent no longer cached: degrade to a fresh bot rather than erroring the screen.
+	card, ok := s.dir.CardFor(req.OpponentPlayerId)
+	if !ok {
+		// Real opponent with no snapshot (rare): degrade to a fresh bot rather than erroring the screen.
 		card = synthBot(s.dir.pools(), user.PlayerId, 0, gametime.NowMillis(), user.Pvp.PvpPoint)
 	}
 	return &pb.StartBattleResponse{OpponentDeckCharacter: s.dir.DefenseDeckOf(card)}, nil
@@ -148,12 +139,12 @@ func (s *PvpServiceServer) FinishBattle(ctx context.Context, req *pb.FinishBattl
 	beforePoint := self.Pvp.PvpPoint
 	beforeRank, _ := s.snaps.RankOfPlayer(self.PlayerId)
 
-	var opp store.MatchingEntry
-	for _, e := range self.PvpMatching {
-		if e.PlayerId == req.OpponentPlayerId {
-			opp = e
-			break
-		}
+	opp := store.MatchingEntry{PlayerId: req.OpponentPlayerId}
+	if card, ok := s.dir.CardFor(req.OpponentPlayerId); ok {
+		opp.Name = card.Name
+		opp.PvpPoint = card.PvpPoint
+		opp.DeckPower = card.MaxDeckPower
+		opp.IsBot = card.IsBot
 	}
 	delta := pointDelta(beforePoint, opp.PvpPoint, req.IsVictory)
 

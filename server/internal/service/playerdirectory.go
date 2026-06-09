@@ -102,3 +102,16 @@ func (d *PlayerDirectory) DefenseDeckOf(card PlayerCard) []*pb.PvpDeckCharacter 
 }
 
 func (d *PlayerDirectory) IsBot(playerId int64) bool { return IsBotId(playerId) }
+
+// CardFor resolves a single player/opponent by id: a bot id → a synthesized card;
+// a real id → the player's snapshot card. Returns (zero, false) if a real player has no snapshot.
+func (d *PlayerDirectory) CardFor(playerId int64) (PlayerCard, bool) {
+	if IsBotId(playerId) {
+		return botCardFromId(d.pools(), playerId), true
+	}
+	snap, err := d.snaps.GetSnapshot(playerId)
+	if err != nil {
+		return PlayerCard{}, false
+	}
+	return cardFromSnapshot(snap), true
+}
