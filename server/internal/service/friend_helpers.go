@@ -42,16 +42,18 @@ func botCardFromId(pools botPools, playerId int64) PlayerCard {
 	}
 }
 
-// maybeResetCheerDay clears stale daily cheer flags. A fuller version (with bot cheer
-// regeneration) replaces this in a later task.
 func maybeResetCheerDay(user *store.UserState) {
 	today := dayBucket()
 	for pid, e := range user.Friends {
-		if e.LastResetDay != today {
-			e.CheerSentToday = false
-			e.StaminaReceivedToday = false
-			e.LastResetDay = today
-			user.Friends[pid] = e
+		if e.LastResetDay == today {
+			continue
 		}
+		e.CheerSentToday = false
+		e.StaminaReceivedToday = false
+		if IsBotId(pid) {
+			e.CheerReceivedPending = true // bots always cheer you
+		}
+		e.LastResetDay = today
+		user.Friends[pid] = e
 	}
 }

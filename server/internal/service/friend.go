@@ -5,6 +5,7 @@ import (
 
 	pb "lunar-tear/server/gen/proto"
 	"lunar-tear/server/internal/gametime"
+	"lunar-tear/server/internal/runtime"
 	"lunar-tear/server/internal/store"
 
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
@@ -15,10 +16,11 @@ type FriendServiceServer struct {
 	users    store.UserRepository
 	sessions store.SessionRepository
 	dir      *PlayerDirectory
+	holder   *runtime.Holder
 }
 
-func NewFriendServiceServer(users store.UserRepository, sessions store.SessionRepository, dir *PlayerDirectory) *FriendServiceServer {
-	return &FriendServiceServer{users: users, sessions: sessions, dir: dir}
+func NewFriendServiceServer(users store.UserRepository, sessions store.SessionRepository, dir *PlayerDirectory, holder *runtime.Holder) *FriendServiceServer {
+	return &FriendServiceServer{users: users, sessions: sessions, dir: dir, holder: holder}
 }
 
 func (s *FriendServiceServer) cardFor(playerId int64) (PlayerCard, bool) {
@@ -208,4 +210,116 @@ func (s *FriendServiceServer) userIdForPlayer(playerId int64) (int64, error) {
 		return 0, err
 	}
 	return playerId, nil
+}
+
+// cheerStaminaMillis is ~30 minutes of natural stamina recovery: 1,800,000 ms / 180 divisor = 10,000
+// milli-units = 10 stamina units, a sane and visible reward comparable to a small stamina item.
+const cheerStaminaMillis int32 = 10_000
+
+// maxStaminaMillisFor returns the stamina cap for the user based on their level,
+// using the same ShopCatalog.MaxStaminaMillis lookup as consumableitem.go.
+// Falls back to a reasonable default if master data is unavailable (e.g. in tests).
+func (s *FriendServiceServer) maxStaminaMillisFor(u *store.UserState) int32 {
+	if s.holder != nil {
+		if cat := s.holder.Get(); cat != nil && cat.Shop != nil {
+			if max, ok := cat.Shop.MaxStaminaMillis[u.Status.Level]; ok {
+				return max
+			}
+		}
+	}
+	return 120_000 // fallback: 120 stamina units, a typical mid-game cap
+}
+
+func (s *FriendServiceServer) CheerFriend(ctx context.Context, req *pb.CheerFriendRequest) (*pb.CheerFriendResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	self, _ := s.users.LoadUser(userId)
+	target := req.PlayerId
+	s.users.UpdateUser(userId, func(u *store.UserState) {
+		maybeResetCheerDay(u)
+		if e, ok := u.Friends[target]; ok {
+			e.CheerSentToday = true
+			u.Friends[target] = e
+		}
+	})
+	if !s.dir.IsBot(target) {
+		if tid, err := s.userIdForPlayer(target); err == nil {
+			s.users.UpdateUser(tid, func(u *store.UserState) {
+				maybeResetCheerDay(u)
+				if e, ok := u.Friends[self.PlayerId]; ok {
+					e.CheerReceivedPending = true
+					u.Friends[self.PlayerId] = e
+				}
+			})
+		}
+	}
+	return &pb.CheerFriendResponse{}, nil
+}
+
+func (s *FriendServiceServer) BulkCheerFriend(ctx context.Context, _ *emptypb.Empty) (*pb.BulkCheerFriendResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	self, _ := s.users.LoadUser(userId)
+	var cheered []int64
+	s.users.UpdateUser(userId, func(u *store.UserState) {
+		maybeResetCheerDay(u)
+		for pid, e := range u.Friends {
+			if !e.CheerSentToday {
+				e.CheerSentToday = true
+				u.Friends[pid] = e
+				cheered = append(cheered, pid)
+			}
+		}
+	})
+	for _, pid := range cheered {
+		if s.dir.IsBot(pid) {
+			continue
+		}
+		if tid, err := s.userIdForPlayer(pid); err == nil {
+			s.users.UpdateUser(tid, func(u *store.UserState) {
+				maybeResetCheerDay(u)
+				if e, ok := u.Friends[self.PlayerId]; ok {
+					e.CheerReceivedPending = true
+					u.Friends[self.PlayerId] = e
+				}
+			})
+		}
+	}
+	return &pb.BulkCheerFriendResponse{PlayerId: cheered}, nil
+}
+
+func (s *FriendServiceServer) ReceiveCheer(ctx context.Context, req *pb.ReceiveCheerRequest) (*pb.ReceiveCheerResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	s.users.UpdateUser(userId, func(u *store.UserState) {
+		maybeResetCheerDay(u)
+		grantCheerReward(u, req.PlayerId, s.maxStaminaMillisFor(u))
+	})
+	return &pb.ReceiveCheerResponse{}, nil
+}
+
+func (s *FriendServiceServer) BulkReceiveCheer(ctx context.Context, _ *emptypb.Empty) (*pb.BulkReceiveCheerResponse, error) {
+	userId := CurrentUserId(ctx, s.users, s.sessions)
+	var got []int64
+	s.users.UpdateUser(userId, func(u *store.UserState) {
+		maybeResetCheerDay(u)
+		maxMillis := s.maxStaminaMillisFor(u)
+		for pid, e := range u.Friends {
+			if e.CheerReceivedPending && !e.StaminaReceivedToday {
+				grantCheerReward(u, pid, maxMillis)
+				got = append(got, pid)
+			}
+		}
+	})
+	return &pb.BulkReceiveCheerResponse{PlayerId: got}, nil
+}
+
+// grantCheerReward collects one friend's pending cheer: grants stamina and marks it collected.
+// maxStaminaMillis is the caller's level-based cap (pass s.maxStaminaMillisFor(u) in RPCs).
+func grantCheerReward(u *store.UserState, friendPlayerId int64, maxStaminaMillis int32) {
+	e, ok := u.Friends[friendPlayerId]
+	if !ok || !e.CheerReceivedPending || e.StaminaReceivedToday {
+		return
+	}
+	store.RecoverStamina(u, cheerStaminaMillis, maxStaminaMillis, gametime.NowMillis())
+	e.CheerReceivedPending = false
+	e.StaminaReceivedToday = true
+	u.Friends[friendPlayerId] = e
 }

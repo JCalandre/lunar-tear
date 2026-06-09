@@ -104,7 +104,7 @@ func registerServices(
 	pb.RegisterCageOrnamentServiceServer(srv, service.NewCageOrnamentServiceServer(userStore, userStore, holder))
 	pb.RegisterDeckServiceServer(srv, service.NewDeckServiceServer(userStore, userStore, userStore))
 	directory := service.NewPlayerDirectory(userStore, holder)
-	pb.RegisterFriendServiceServer(srv, service.NewFriendServiceServer(userStore, userStore, directory))
+	pb.RegisterFriendServiceServer(srv, service.NewFriendServiceServer(userStore, userStore, directory, holder))
 	pb.RegisterLoginBonusServiceServer(srv, service.NewLoginBonusServiceServer(userStore, userStore, holder))
 	pb.RegisterNaviCutInServiceServer(srv, service.NewNaviCutInServiceServer(userStore, userStore))
 	pb.RegisterContentsStoryServiceServer(srv, service.NewContentsStoryServiceServer(userStore, userStore))
