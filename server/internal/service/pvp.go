@@ -26,7 +26,14 @@ func NewPvpServiceServer(users store.UserRepository, sessions store.SessionRepos
 	return &PvpServiceServer{users: users, sessions: sessions, snaps: snaps, dir: dir, holder: holder}
 }
 
-const currentSeasonId int32 = 1 // single fixed season for the core; rollover deferred
+// currentSeasonId must be a real m_pvp_season row id that is within its
+// [SeasonStartDatetime, SeasonEndDatetime] window and not IsInvalid — the client
+// resolves the arena's period/grade/name from this id and shows "arena not open"
+// (garbage period, sentinel stats, disabled Battle) if the lookup fails.
+// 202038 is the last non-invalid season (202039 is IsInvalid; 202040-202044 are
+// 2099 placeholders); the patcher extends its SeasonEndDatetime to 2030, so it is
+// the single active season. Rollover across seasons is deferred.
+const currentSeasonId int32 = 202038
 
 func (s *PvpServiceServer) GetTopData(ctx context.Context, _ *emptypb.Empty) (*pb.GetTopDataResponse, error) {
 	userId := CurrentUserId(ctx, s.users, s.sessions)
